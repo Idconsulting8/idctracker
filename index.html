@@ -164,15 +164,36 @@
         }
 
         .period-selector {
-            background: #cbd5e1;
-            padding: 15px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            padding: 12px 18px;
             border-radius: var(--radius);
             margin-bottom: 25px;
             display: flex;
             align-items: center;
             justify-content: space-between;
             flex-wrap: wrap;
-            gap: 15px;
+            gap: 12px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+        }
+        .period-simple-group {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--bg-main);
+            padding: 4px 8px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+        .period-simple-group select {
+            border: none;
+            background: transparent;
+            font-weight: 600;
+            color: var(--primary);
+            padding: 4px 6px;
+            font-size: 14px;
+            cursor: pointer;
+            outline: none;
         }
 
         .client-grid {
@@ -394,6 +415,35 @@
             color: #155724;
             border-left-color: var(--success);
         }
+
+        /* Gaya Tambahan Fitur Baru v19+ */
+        .idc-ext-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 14px;
+            margin-top: 12px;
+        }
+        .idc-ext-stat {
+            background: var(--bg-main);
+            border: 1px solid var(--border-color);
+            border-left: 4px solid var(--primary);
+            border-radius: 8px;
+            padding: 12px 14px;
+        }
+        .idc-ext-stat .stat-label { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+        .idc-ext-stat .stat-num { font-size: 22px; font-weight: 700; color: var(--primary); margin-top: 4px; }
+        .idc-pill {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        .idc-pill-ok { background: #dcfce7; color: #166534; }
+        .idc-pill-warn { background: #fef3c7; color: #92400e; }
+        .idc-pill-bad { background: #fee2e2; color: #991b1b; }
+        .idc-pill-info { background: #dbeafe; color: #1e40af; }
+        .idc-table-wrap { overflow-x: auto; }
     </style>
 </head>
 <body>
@@ -691,18 +741,27 @@
         </div>
 
         <div class="period-selector">
-            <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
-                <span><strong>Periode Bulan Kerja:</strong></span>
-                <select id="currentPeriodFilter" onchange="changeSystemPeriod(this.value)">
-                    <option value="2026-01">Januari 2026</option>
-                    <option value="2026-02">Februari 2026</option>
-                    <option value="2026-03">Maret 2026</option>
-                    <option value="2026-04">April 2026</option>
-                    <option value="2026-05">Mei 2026</option>
-                    <option value="2026-06">Juni 2026</option>
-                    <option value="2026-07">Juli 2026</option>
-                    <option value="2026-08">Agustus 2026</option>
-                </select>
+            <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                <span style="font-size: 14px;"><strong>Periode Kerja:</strong></span>
+                <div class="period-simple-group">
+                    <select id="periodMonthSelect" onchange="handleSimplePeriodChange()">
+                        <option value="01">Januari</option>
+                        <option value="02">Februari</option>
+                        <option value="03">Maret</option>
+                        <option value="04">April</option>
+                        <option value="05">Mei</option>
+                        <option value="06">Juni</option>
+                        <option value="07" selected>Juli</option>
+                        <option value="08">Agustus</option>
+                        <option value="09">September</option>
+                        <option value="10">Oktober</option>
+                        <option value="11">November</option>
+                        <option value="12">Desember</option>
+                    </select>
+                    <span style="color:var(--border-color);">|</span>
+                    <select id="periodYearSelect" onchange="handleSimplePeriodChange()"></select>
+                </div>
+                <input type="hidden" id="currentPeriodFilter" value="2026-07">
                 <span id="periodLockMessage" style="color:var(--danger); font-weight:bold; display:none; font-size:13px;">🔒 Periode Berikutnya Terkunci! Selesaikan semua closing klien bulan berjalan untuk membuka otomatis.</span>
             </div>
             <button id="btnRequestBypass" onclick="openBypassRequestModal()" class="btn-warning" style="display:none; font-size:12px;">✉️ Ajukan Permohonan Akses Periode Selanjutnya</button>
@@ -927,7 +986,7 @@
                     loggedInUser = userObj;
                     if (savedPeriod) {
                         activePeriod = savedPeriod;
-                        document.getElementById('currentPeriodFilter').value = activePeriod;
+                        syncPeriodControls(activePeriod);
                     }
                     generateMonthlyWorksheetsIfNotExist(activePeriod);
                     showDashboardInterface(loggedInUser);
@@ -1144,15 +1203,37 @@
             }
         }
 
+        // Helper periode (YYYY-MM) tanpa batas akhir tahun hingga 2100
+        function getNextPeriodStr(periodStr) {
+            const [y, m] = periodStr.split('-').map(Number);
+            if (y >= 2100 && m >= 12) return null;
+            const nextM = m === 12 ? 1 : m + 1;
+            const nextY = m === 12 ? y + 1 : y;
+            return `${nextY}-${String(nextM).padStart(2, '0')}`;
+        }
+
+        function syncPeriodControls(periodStr) {
+            if (!periodStr || !periodStr.includes('-')) return;
+            const [y, m] = periodStr.split('-');
+            const mSel = document.getElementById('periodMonthSelect');
+            const ySel = document.getElementById('periodYearSelect');
+            const hiddenInp = document.getElementById('currentPeriodFilter');
+            if (mSel) mSel.value = m;
+            if (ySel) ySel.value = y;
+            if (hiddenInp) hiddenInp.value = periodStr;
+        }
+
+        function handleSimplePeriodChange() {
+            const m = document.getElementById('periodMonthSelect').value;
+            const y = document.getElementById('periodYearSelect').value;
+            changeSystemPeriod(`${y}-${m}`);
+        }
+
         // Ketentuan 3: Modifikasi filter periode agar memblokir PIC memilih periode mendatang jika periode saat ini belum closing
         function changeSystemPeriod(newPeriod) {
             if (loggedInUser && loggedInUser.role === 'pic') {
-                const periods = Array.from(document.querySelectorAll('#currentPeriodFilter option')).map(o => o.value);
-                const currentIdx = periods.indexOf(activePeriod);
-                const targetIdx = periods.indexOf(newPeriod);
-                
-                // Jika mencoba berpindah ke periode masa depan
-                if (targetIdx > currentIdx) {
+                // Bandingkan urutan kronologis YYYY-MM secara langsung
+                if (newPeriod > activePeriod) {
                     const myClients = appClients.filter(c => c.pic === loggedInUser.id && c.isActive);
                     let allClosed = true;
                     myClients.forEach(c => {
@@ -1167,13 +1248,14 @@
                     
                     if (!allClosed && !hasBypassApproved) {
                         alert(`⚠️ Akses Ditolak!\nAnda tidak bisa memilih periode selanjutnya karena pekerjaan periode saat ini (${activePeriod}) belum berstatus Approved Closed oleh Supervisor.\n\nSilakan klik tombol 'Ajukan Permohonan Akses Periode Selanjutnya' jika mengalami hambatan.`);
-                        document.getElementById('currentPeriodFilter').value = activePeriod;
+                        syncPeriodControls(activePeriod);
                         return;
                     }
                 }
             }
 
             activePeriod = newPeriod;
+            syncPeriodControls(activePeriod);
             localStorage.setItem('idc_active_period_v4', newPeriod);
             generateMonthlyWorksheetsIfNotExist(activePeriod);
             renderMainWorkspace();
@@ -1207,10 +1289,7 @@
                 }
             });
 
-            // Cari tahu jika ada opsi periode selanjutnya di select element
-            const periods = Array.from(document.querySelectorAll('#currentPeriodFilter option')).map(o => o.value);
-            const currentIdx = periods.indexOf(activePeriod);
-            const nextPeriod = periods[currentIdx + 1] || activePeriod;
+            const nextPeriod = getNextPeriodStr(activePeriod) || activePeriod;
 
             const hasBypassApproved = approvedBypasses[loggedInUser.id] && approvedBypasses[loggedInUser.id].includes(nextPeriod);
             const isLocked = !allClosedAndApproved && !hasBypassApproved && picClients.length > 0;
@@ -1231,9 +1310,7 @@
                 return;
             }
             
-            const periods = Array.from(document.querySelectorAll('#currentPeriodFilter option')).map(o => o.value);
-            const currentIdx = periods.indexOf(activePeriod);
-            const nextPeriod = periods[currentIdx + 1];
+            const nextPeriod = getNextPeriodStr(activePeriod);
             
             if (!nextPeriod) {
                 alert("Tidak ada periode berikutnya yang terdaftar di sistem.");
@@ -1545,10 +1622,9 @@
         }
 
         function focusOnMainWorkspaceCard(wsId) {
-            const targetPeriod = wsId.split('_')[1] + "_" + wsId.split('_')[2]; 
             const extractedPeriod = wsId.substring(wsId.lastIndexOf('_') + 1);
-            document.getElementById('currentPeriodFilter').value = extractedPeriod;
             activePeriod = extractedPeriod;
+            syncPeriodControls(extractedPeriod);
             renderMainWorkspace();
             window.scrollTo({ top: document.getElementById('workspaceMainGridHeaderTitle').offsetTop - 20, behavior: 'smooth' });
         }
@@ -2448,6 +2524,13 @@
         }
 
         window.onload = function() {
+            const yearSel = document.getElementById('periodYearSelect');
+            if (yearSel) {
+                for (let y = 2026; y <= 2100; y++) {
+                    yearSel.innerHTML += `<option value="${y}">${y}</option>`;
+                }
+            }
+            syncPeriodControls(activePeriod);
             loadDataFromGoogleSheet(); 
             const savedTheme = localStorage.getItem('idc_saved_theme_v4') || 'corporate';
             const savedFont = localStorage.getItem('idc_saved_font_v4') || "'Inter', sans-serif";
@@ -2706,7 +2789,2023 @@
         }
     };
 })();
-    
+
+// ==========================================================================
+// TAMBAHAN REVISI V.19: DEADLINE BULAN BERIKUTNYA (TANGGAL SAMA)
+// ==========================================================================
+(function() {
+    function shiftToSameDayNextMonth(dateStr) {
+        if (!dateStr || !dateStr.includes('-')) return dateStr;
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const nextY = m === 12 ? y + 1 : y;
+        const nextM = m === 12 ? 1 : m + 1;
+        const maxDayInNextMonth = new Date(nextY, nextM, 0).getDate();
+        const validDay = Math.min(d, maxDayInNextMonth);
+        return `${nextY}-${String(nextM).padStart(2, '0')}-${String(validDay).padStart(2, '0')}`;
+    }
+
+    const originalGenerateMonthlyWorksheetsIfNotExist = window.generateMonthlyWorksheetsIfNotExist;
+    window.generateMonthlyWorksheetsIfNotExist = function(period) {
+        const beforeCount = appWorksheets.length;
+        if (typeof originalGenerateMonthlyWorksheetsIfNotExist === 'function') {
+            originalGenerateMonthlyWorksheetsIfNotExist(period);
+        }
+        if (appWorksheets.length > beforeCount) {
+            let updated = false;
+            appWorksheets.slice(beforeCount).forEach(ws => {
+                if (ws.tasks) {
+                    ws.tasks.forEach(t => {
+                        if (t.deadline && t.deadline.startsWith(period + '-')) {
+                            t.deadline = shiftToSameDayNextMonth(t.deadline);
+                            updated = true;
+                        }
+                    });
+                }
+            });
+            if (updated && typeof saveStateToLocalStorage === 'function') {
+                saveStateToLocalStorage();
+            }
+        }
+    };
+})();
+
+// ==========================================================================
+// FITUR TAMBAHAN BARU (TIDAK MENGUBAH KODE ASLI DI ATAS):
+// 1. Audit Trail (PIC & Data Entry hanya menampilkan history klien yang mereka handle)
+// 2. Password Encryption (SHA-256 + Salt & Kompatibilitas Password Lama)
+// 3. Dashboard Monitoring Deadline
+// 4. Dashboard Monitoring Closing
+// 5. Workflow Perpindahan PIC atas Klien (5 Tahap + Transfer History, Client Ownership History & Outstanding Handover Report)
+// 6. Sidebar Navigasi Menu Samping Kiri (Compact Dashboard Menu Selector)
+// ==========================================================================
+(function() {
+    const AUDIT_KEY = 'idc_audit_trail_v19_ext';
+    const PIC_TRANSFER_KEY = 'idc_pic_transfer_flows_v20';
+    const CLIENT_OWNERSHIP_KEY = 'idc_client_ownership_history_v20';
+    const SIDEBAR_MENU_STATE_KEY = 'idc_active_sidebar_menu_v22';
+    const ENC_PREFIX = 'ENC_SHA256$';
+
+    let appAuditLogs = JSON.parse(localStorage.getItem(AUDIT_KEY)) || [];
+    let appPicTransfers = JSON.parse(localStorage.getItem(PIC_TRANSFER_KEY)) || [];
+    let appClientOwnershipHistory = JSON.parse(localStorage.getItem(CLIENT_OWNERSHIP_KEY)) || {};
+    let currentSidebarMenuId = localStorage.getItem(SIDEBAR_MENU_STATE_KEY) || 'ALL';
+
+    const HANDOVER_CHECKLIST_SCHEMA = [
+        {
+            group: 'Administrasi',
+            items: [
+                { key: 'adm_kontak', label: 'Data kontak klien' },
+                { key: 'adm_legal', label: 'Dokumen legal' }
+            ]
+        },
+        {
+            group: 'Accounting',
+            items: [
+                { key: 'acc_tb', label: 'TB' },
+                { key: 'acc_gl', label: 'GL' },
+                { key: 'acc_wp', label: 'Working Paper' },
+                { key: 'acc_lk', label: 'Laporan Keuangan' }
+            ]
+        },
+        {
+            group: 'Tax',
+            items: [
+                { key: 'tax_setor', label: 'Bukti Setor' },
+                { key: 'tax_lapor', label: 'Bukti Lapor' },
+                { key: 'tax_spt_masa', label: 'SPT Masa' },
+                { key: 'tax_spt_tahunan', label: 'SPT Tahunan' }
+            ]
+        },
+        {
+            group: 'Outstanding Issue',
+            items: [
+                { key: 'out_masalah', label: 'Daftar masalah terbuka' },
+                { key: 'out_sp2dk', label: 'SP2DK' },
+                { key: 'out_pemeriksaan', label: 'Pemeriksaan Pajak' },
+                { key: 'out_teguran', label: 'Surat Teguran' },
+                { key: 'out_permintaan', label: 'Permintaan Klien' }
+            ]
+        }
+    ];
+
+    const ALL_CHECKLIST_KEYS = HANDOVER_CHECKLIST_SCHEMA.reduce((acc, g) => acc.concat(g.items.map(i => i.key)), []);
+
+    function getActorName() {
+        if (loggedInUser && loggedInUser.name) return `${loggedInUser.name} (${loggedInUser.role})`;
+        const sel = document.getElementById('loginUserSelect');
+        if (sel && sel.value) {
+            const u = (appUsers || []).find(item => item.id === sel.value);
+            if (u) return `${u.name} (${u.role})`;
+        }
+        return 'System / Guest';
+    }
+
+    function recordAuditTrail(category, action, target, detail, explicitClientId) {
+        let resolvedClientId = explicitClientId || '';
+        if (!resolvedClientId && target) {
+            const matchedClient = (appClients || []).find(c =>
+                c.id === target || String(c.name || '').toLowerCase() === String(target).toLowerCase()
+            );
+            if (matchedClient) resolvedClientId = matchedClient.id;
+        }
+
+        const entry = {
+            id: 'aud_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+            timestamp: new Date().toLocaleString('id-ID'),
+            actor: getActorName(),
+            actorId: loggedInUser ? loggedInUser.id : '',
+            category: category || 'SYSTEM',
+            action: action || '-',
+            target: target || '-',
+            clientId: resolvedClientId,
+            detail: detail || '-',
+            period: activePeriod || '-'
+        };
+        appAuditLogs.unshift(entry);
+        if (appAuditLogs.length > 500) appAuditLogs = appAuditLogs.slice(0, 500);
+        localStorage.setItem(AUDIT_KEY, JSON.stringify(appAuditLogs));
+        renderAuditTrailDashboard();
+    }
+    window.recordAuditTrail = recordAuditTrail;
+
+    // Helper: Ambil daftar klien yang di-handle oleh PIC atau Data Entry saat ini
+    function getHandledClientEntitiesForCurrentUser() {
+        const clientIds = new Set();
+        const clientNames = new Set();
+
+        if (!loggedInUser) return { clientIds, clientNames };
+
+        if (loggedInUser.role === 'pic') {
+            (appClients || []).forEach(c => {
+                if (c.pic === loggedInUser.id) {
+                    clientIds.add(c.id);
+                    if (c.name) clientNames.add(String(c.name).toLowerCase());
+                }
+            });
+            (appWorksheets || []).forEach(w => {
+                if (w.picId === loggedInUser.id) {
+                    if (w.clientId) clientIds.add(w.clientId);
+                    if (w.clientName) clientNames.add(String(w.clientName).toLowerCase());
+                }
+            });
+            (appPicTransfers || []).forEach(t => {
+                if (t.fromPicId === loggedInUser.id || t.toPicId === loggedInUser.id) {
+                    if (t.clientId) clientIds.add(t.clientId);
+                    if (t.clientName) clientNames.add(String(t.clientName).toLowerCase());
+                }
+            });
+        } else if (loggedInUser.role === 'data_entry') {
+            (appJobOrders || []).forEach(jo => {
+                if (jo.deId === loggedInUser.id || jo.dataEntryId === loggedInUser.id) {
+                    if (jo.clientId) clientIds.add(jo.clientId);
+                    if (jo.clientName) clientNames.add(String(jo.clientName).toLowerCase());
+                    const clObj = (appClients || []).find(c => c.id === jo.clientId);
+                    if (clObj && clObj.name) clientNames.add(String(clObj.name).toLowerCase());
+                }
+            });
+        }
+
+        return { clientIds, clientNames };
+    }
+
+    // ---------------- 2. PASSWORD ENCRYPTION (SHA-256) ----------------
+    async function hashPasswordText(plainText) {
+        const raw = String(plainText || '');
+        if (!raw) return '';
+        if (raw.startsWith(ENC_PREFIX)) return raw;
+        const salt = 'IDC_V19_SALT_2026:';
+        const data = new TextEncoder().encode(salt + raw);
+        if (window.crypto && window.crypto.subtle) {
+            const digest = await window.crypto.subtle.digest('SHA-256', data);
+            const hex = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+            return ENC_PREFIX + hex;
+        }
+        let h = 0x811c9dc5;
+        const s = salt + raw;
+        for (let i = 0; i < s.length; i++) {
+            h ^= s.charCodeAt(i);
+            h = Math.imul(h, 0x01000193);
+        }
+        return ENC_PREFIX + (h >>> 0).toString(16).padStart(8, '0');
+    }
+
+    async function verifyEncryptedPassword(inputPlain, storedValue) {
+        const inp = String(inputPlain || '');
+        const stored = String(storedValue || '');
+        if (!stored) return false;
+        if (stored.startsWith(ENC_PREFIX)) {
+            const hashedInput = await hashPasswordText(inp);
+            return hashedInput === stored;
+        }
+        return inp === stored;
+    }
+
+    async function encryptAllExistingPasswords() {
+        if (!Array.isArray(appUsers)) return;
+        let changed = false;
+        for (let i = 0; i < appUsers.length; i++) {
+            const pw = appUsers[i].password;
+            if (pw && !String(pw).startsWith(ENC_PREFIX)) {
+                appUsers[i].password = await hashPasswordText(pw);
+                changed = true;
+            }
+        }
+        if (changed) {
+            localStorage.setItem('idc_users_v4', JSON.stringify(appUsers));
+        }
+    }
+
+    const origTriggerForgotPassword = window.triggerForgotPassword;
+    window.triggerForgotPassword = function() {
+        const userId = document.getElementById('loginUserSelect').value;
+        const user = (appUsers || []).find(u => u.id === userId);
+        if (!user) return alert("Pilih user terlebih dahulu.");
+        const confirmation = confirm(`Apakah Anda ingin mengatur ulang (reset) password untuk akun: ${user.name}?`);
+        if (confirmation) {
+            const newPass = prompt(`Masukkan password baru untuk akun ${user.name}:`);
+            if (newPass && newPass.trim().length >= 4) {
+                hashPasswordText(newPass.trim()).then(hashed => {
+                    const idx = appUsers.findIndex(u => u.id === userId);
+                    if (idx !== -1) {
+                        appUsers[idx].password = hashed;
+                        saveStateToLocalStorage();
+                        recordAuditTrail('SECURITY', 'RESET_PASSWORD_ENCRYPTED', user.name, 'Password dienkripsi SHA-256 saat reset');
+                        alert("Password berhasil diperbarui & dienkripsi! Silakan login.");
+                    }
+                });
+            } else {
+                alert("Reset dibatalkan atau password terlalu pendek (Min. 4 Karakter).");
+            }
+        }
+    };
+
+    const origAttemptLogin = window.attemptLogin;
+    window.attemptLogin = async function() {
+        await encryptAllExistingPasswords();
+        const userId = document.getElementById('loginUserSelect').value;
+        const passwordInput = document.getElementById('loginPassword').value.trim();
+        const user = (appUsers || []).find(u => u.id === userId);
+        if (!user) return alert("User tidak valid.");
+
+        const isNewAccount = (user.role === 'pic' || user.role === 'data_entry') && !user.password;
+        if (isNewAccount) {
+            if (passwordInput.length < 4) {
+                alert("Kata sandi baru minimal 4 karakter!");
+                return;
+            }
+            user.password = await hashPasswordText(passwordInput);
+            loggedInUser = user;
+            document.getElementById('loginPassword').value = "";
+            generateMonthlyWorksheetsIfNotExist(activePeriod);
+            saveStateToLocalStorage();
+            recordAuditTrail('SECURITY', 'CREATE_ENCRYPTED_PASSWORD', user.name, 'Akun baru mengunci password dengan SHA-256');
+            recordAuditTrail('AUTH', 'LOGIN_SUCCESS', user.name, 'Login pertama setelah set password terenkripsi');
+            alert("Password Anda berhasil dienkripsi dan disimpan untuk keamanan login berikutnya.");
+            showDashboardInterface(loggedInUser);
+            return;
+        }
+
+        const valid = await verifyEncryptedPassword(passwordInput, user.password);
+        if (!valid) {
+            recordAuditTrail('SECURITY', 'LOGIN_FAILED', user.name, 'Percobaan login gagal (password tidak sesuai)');
+            alert("Kata sandi salah! Hubungi Supervisor Utama jika lupa.");
+            return;
+        }
+
+        if (!String(user.password).startsWith(ENC_PREFIX)) {
+            user.password = await hashPasswordText(passwordInput);
+        }
+
+        loggedInUser = user;
+        document.getElementById('loginPassword').value = "";
+        generateMonthlyWorksheetsIfNotExist(activePeriod);
+        saveStateToLocalStorage();
+        recordAuditTrail('AUTH', 'LOGIN_SUCCESS', user.name, `Login berhasil pada periode ${activePeriod}`);
+        showDashboardInterface(loggedInUser);
+    };
+
+    // ---------------- HELPER WORKFLOW PERPINDAHAN PIC (5 TAHAP) ----------------
+    function formatDateIndoShort(dateStr) {
+        if (!dateStr || dateStr === 'Sekarang') return 'Sekarang';
+        const parts = dateStr.split('-');
+        if (parts.length !== 3) return dateStr;
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+        const y = parts[0];
+        const mIdx = parseInt(parts[1], 10) - 1;
+        const d = parts[2];
+        return `${d} ${months[mIdx] || parts[1]} ${y}`;
+    }
+
+    function minusOneDayStr(dateStr) {
+        if (!dateStr || !dateStr.includes('-')) return dateStr;
+        const d = new Date(dateStr + 'T00:00:00');
+        d.setDate(d.getDate() - 1);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    }
+
+    function ensureClientOwnershipInitialized() {
+        let changed = false;
+        (appClients || []).forEach(c => {
+            if (!appClientOwnershipHistory[c.id] || appClientOwnershipHistory[c.id].length === 0) {
+                const picUser = (appUsers || []).find(u => u.id === c.pic);
+                appClientOwnershipHistory[c.id] = [
+                    {
+                        picId: c.pic,
+                        picName: picUser ? picUser.name : 'Unassigned',
+                        startDate: '2026-01-01',
+                        endDate: null
+                    }
+                ];
+                changed = true;
+            }
+        });
+        if (changed) {
+            localStorage.setItem(CLIENT_OWNERSHIP_KEY, JSON.stringify(appClientOwnershipHistory));
+        }
+    }
+
+    function computeChecklistSummary(checklistObj) {
+        const ck = checklistObj || {};
+        const checkedCount = ALL_CHECKLIST_KEYS.filter(k => !!ck[k]).length;
+        const total = ALL_CHECKLIST_KEYS.length;
+        const isComplete = checkedCount === total;
+        return {
+            checkedCount,
+            total,
+            isComplete,
+            label: isComplete ? 'Lengkap' : 'Belum Lengkap'
+        };
+    }
+
+    function generateOutstandingHandoverReport(clientId, oldPicId) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const clientSheets = (appWorksheets || []).filter(w => w.clientId === clientId && w.period >= activePeriod);
+        const completedTasks = [];
+        const unfinishedTasks = [];
+        const nearDeadlineTasks = [];
+        const overdueTasks = [];
+        const unclosedPeriods = [];
+
+        clientSheets.forEach(ws => {
+            if (!ws.isClosed || !ws.supervisorReview || ws.supervisorReview.status !== 'approved') {
+                unclosedPeriods.push(ws.period);
+            }
+            (ws.tasks || []).forEach(t => {
+                const label = `[${ws.period}] ${t.name} (DL: ${t.deadline || '-'})`;
+                if (t.done) {
+                    completedTasks.push(label);
+                } else {
+                    unfinishedTasks.push(label);
+                    if (t.deadline) {
+                        const dl = new Date(t.deadline);
+                        dl.setHours(0, 0, 0, 0);
+                        const diffDays = Math.ceil((dl.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                        if (diffDays < 0) {
+                            overdueTasks.push(`${label} — Terlambat ${Math.abs(diffDays)} hari`);
+                        } else if (diffDays <= 7) {
+                            nearDeadlineTasks.push(`${label} — Sisa ${diffDays} hari`);
+                        }
+                    }
+                }
+            });
+        });
+
+        const openJobOrders = (appJobOrders || []).filter(jo =>
+            jo.clientId === clientId &&
+            (!oldPicId || jo.picId === oldPicId) &&
+            jo.status !== 'approved' &&
+            jo.status !== 'Selesai'
+        ).map(jo => `${jo.description} (DE: ${jo.deName || '-'}, DL: ${jo.deadline || '-'}, Status: ${jo.status})`);
+
+        const extensionRequestedJobOrders = (appJobOrders || []).filter(jo =>
+            jo.clientId === clientId && jo.extensionRequested
+        ).map(jo => `Job Order: ${jo.description} (+${jo.extensionRequestedDays} hari)`);
+
+        const activeClarifications = (appClarifications || []).filter(c =>
+            c.clientId === clientId && c.status !== 'solved'
+        ).map(c => `${c.note} (DL: ${c.deadline || '-'}${c.extendRequested ? ', Ajukan +'+c.extendRequestedDays+' hari' : ''})`);
+
+        const extensionRequestedClarifications = (appClarifications || []).filter(c =>
+            c.clientId === clientId && c.extendRequested
+        ).map(c => `Klarifikasi: ${c.note} (+${c.extendRequestedDays} hari)`);
+
+        return {
+            generatedAt: new Date().toLocaleString('id-ID'),
+            completedTasks,
+            unfinishedTasks,
+            nearDeadlineTasks,
+            overdueTasks,
+            unclosedPeriods,
+            openJobOrders,
+            activeClarifications,
+            extensionRequests: extensionRequestedJobOrders.concat(extensionRequestedClarifications)
+        };
+    }
+
+    function renderChecklistHtml(trf, canEdit) {
+        const ck = trf.checklist || {};
+        return HANDOVER_CHECKLIST_SCHEMA.map(grp => {
+            const itemsHtml = grp.items.map(it => {
+                const checked = ck[it.key] ? 'checked' : '';
+                const disabled = canEdit ? '' : 'disabled';
+                return `
+                    <label style="display:flex; align-items:center; gap:6px; font-size:12px; margin-bottom:4px; cursor:${canEdit ? 'pointer' : 'default'};">
+                        <input type="checkbox" ${checked} ${disabled} onchange="toggleTransferChecklistItem('${trf.id}', '${it.key}', this.checked)">
+                        <span>${it.label}</span>
+                    </label>
+                `;
+            }).join('');
+            return `
+                <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:6px; padding:10px;">
+                    <div style="font-weight:700; font-size:12px; color:var(--primary); margin-bottom:6px; border-bottom:1px solid var(--border-color); padding-bottom:4px;">${grp.group}</div>
+                    ${itemsHtml}
+                </div>
+            `;
+        }).join('');
+    }
+
+    function renderHandoverReportHtml(report) {
+        if (!report) return '<small style="color:var(--text-muted);">Laporan belum dibuat.</small>';
+        const renderList = (arr, emptyMsg) => arr && arr.length
+            ? `<ul style="margin:4px 0 0 16px; padding:0; font-size:12px;">${arr.map(x => `<li>${x}</li>`).join('')}</ul>`
+            : `<div style="font-size:12px; color:var(--text-muted); margin-top:2px;">${emptyMsg}</div>`;
+
+        return `
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px; margin-top:8px;">
+                <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:6px; padding:8px;">
+                    <strong style="font-size:12px; color:var(--success);">✅ Task Selesai (${report.completedTasks.length})</strong>
+                    ${renderList(report.completedTasks, 'Tidak ada task selesai')}
+                </div>
+                <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:6px; padding:8px;">
+                    <strong style="font-size:12px; color:var(--danger);">⏳ Task Belum Selesai (${report.unfinishedTasks.length})</strong>
+                    ${renderList(report.unfinishedTasks, 'Semua task sudah selesai')}
+                </div>
+                <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:6px; padding:8px;">
+                    <strong style="font-size:12px; color:#b45309;">⚠️ Deadline Dekat (${report.nearDeadlineTasks.length})</strong>
+                    ${renderList(report.nearDeadlineTasks, 'Tidak ada deadline dekat')}
+                </div>
+                <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:6px; padding:8px;">
+                    <strong style="font-size:12px; color:var(--primary);">📋 Job Order Terbuka (${report.openJobOrders.length})</strong>
+                    ${renderList(report.openJobOrders, 'Tidak ada job order terbuka')}
+                </div>
+                <div style="background:var(--bg-card); border:1px solid var(--border-color); border-radius:6px; padding:8px;">
+                    <strong style="font-size:12px; color:#6d28d9;">💬 Klarifikasi Aktif (${report.activeClarifications.length})</strong>
+                    ${renderList(report.activeClarifications, 'Tidak ada klarifikasi aktif')}
+                </div>
+            </div>
+        `;
+    }
+
+    // ---------------- 6. SIDEBAR NAVIGASI SAMPING KIRI ----------------
+    function getSidebarMenuDefinitionsForRole(role) {
+        if (role === 'supervisor') {
+            return [
+                { id: 'ALL', icon: '📊', label: 'Semua Menu (Full)', desc: 'Tampilkan seluruh dashboard' },
+                { id: 'sup_kpi', icon: '📈', label: 'Evaluasi KPI PIC', targets: ['supervisorKpiPanel'] },
+                { id: 'sup_closing_notif', icon: '🔔', label: 'Antrean Closing PIC', targets: ['supervisorClosingNotifPanel'] },
+                { id: 'sup_period_req', icon: '✉️', label: 'Permohonan Periode', targets: ['supervisorRequestsPanel'] },
+                { id: 'sup_master', icon: '🔧', label: 'Master Klien & Tim', targets: ['supervisorControlPanel'] },
+                { id: 'sup_worksheet', icon: '📋', label: 'Matrik Worksheet Klien', targets: ['periodSelectorBlock', 'supervisorFilterRowZone', 'workspaceMainGridHeaderTitle', 'mainWorkspaceGrid'] },
+                { id: 'sup_jo_monitor', icon: '👁️', label: 'Log Job Order DE', targets: ['supervisorJobOrderMonitorPanel'] },
+                { id: 'sup_deadline', icon: '⏰', label: 'Monitoring Deadline', targets: ['extDeadlineMonitorPanel'] },
+                { id: 'sup_closing_mon', icon: '🔒', label: 'Monitoring Closing', targets: ['extClosingMonitorPanel'] },
+                { id: 'sup_transfer', icon: '🔁', label: 'Transfer PIC Client', targets: ['extPicTransferPanel'] },
+                { id: 'sup_clarify', icon: '💬', label: 'Klarifikasi Jobdesc', targets: ['supervisorClarifyExtendPanel', 'clarificationWorkspacePanel'] },
+                { id: 'sup_audit', icon: '📜', label: 'Audit Trail', targets: ['extAuditTrailPanel'] }
+            ];
+        } else if (role === 'pic') {
+            return [
+                { id: 'ALL', icon: '📊', label: 'Semua Menu (Full)', desc: 'Tampilkan seluruh dashboard' },
+                { id: 'pic_perf', icon: '📈', label: 'Statistik Kinerja', targets: ['picPerformancePanel'] },
+                { id: 'pic_worksheet', icon: '📋', label: 'Worksheet Klien', targets: ['periodSelectorBlock', 'workspaceMainGridHeaderTitle', 'mainWorkspaceGrid'] },
+                { id: 'pic_jo', icon: '🚀', label: 'Job Order Data Entry', targets: ['picJobOrderManagerPanel'] },
+                { id: 'pic_deadline', icon: '⏰', label: 'Monitoring Deadline', targets: ['extDeadlineMonitorPanel'] },
+                { id: 'pic_closing_mon', icon: '🔒', label: 'Monitoring Closing', targets: ['extClosingMonitorPanel'] },
+                { id: 'pic_transfer', icon: '🔁', label: 'Transfer PIC Client', targets: ['extPicTransferPanel'] },
+                { id: 'pic_clarify', icon: '💬', label: 'Klarifikasi Mandiri', targets: ['clarificationWorkspacePanel'] },
+                { id: 'pic_audit', icon: '📜', label: 'Audit Trail Klien Saya', targets: ['extAuditTrailPanel'] }
+            ];
+        } else if (role === 'data_entry') {
+            return [
+                { id: 'ALL', icon: '📊', label: 'Semua Menu (Full)', desc: 'Tampilkan seluruh dashboard' },
+                { id: 'de_tasks', icon: '📥', label: 'Tugas & Job Order', targets: ['dataEntryWorkspacePanel'] },
+                { id: 'de_deadline', icon: '⏰', label: 'Monitoring Deadline', targets: ['extDeadlineMonitorPanel'] },
+                { id: 'de_audit', icon: '📜', label: 'Audit Trail Klien Saya', targets: ['extAuditTrailPanel'] }
+            ];
+        }
+        return [];
+    }
+
+    function ensureSidebarLayoutShell() {
+        const dash = document.getElementById('dashboardPage');
+        if (!dash || document.getElementById('idcSidebarShell')) return;
+
+        const styleTag = document.createElement('style');
+        styleTag.id = 'idcSidebarStyles';
+        styleTag.textContent = `
+            #idcSidebarShell {
+                display: flex;
+                gap: 20px;
+                align-items: flex-start;
+                margin-top: 6px;
+            }
+            #idcSidebarNav {
+                width: 245px;
+                min-width: 245px;
+                background: var(--bg-card);
+                border: 1px solid var(--border-color);
+                border-radius: var(--radius);
+                padding: 12px;
+                position: sticky;
+                top: 15px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+                transition: all 0.25s ease;
+                z-index: 20;
+            }
+            #idcSidebarNav.collapsed {
+                width: 58px;
+                min-width: 58px;
+                padding: 10px 6px;
+            }
+            #idcSidebarNav.collapsed .idc-nav-title-text,
+            #idcSidebarNav.collapsed .idc-nav-label,
+            #idcSidebarNav.collapsed .idc-nav-footer {
+                display: none;
+            }
+            .idc-nav-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding-bottom: 10px;
+                margin-bottom: 10px;
+                border-bottom: 1px solid var(--border-color);
+                font-size: 13px;
+                font-weight: 700;
+                color: var(--primary);
+            }
+            .idc-nav-toggle-btn {
+                background: var(--bg-main);
+                color: var(--primary);
+                border: 1px solid var(--border-color);
+                padding: 4px 8px;
+                border-radius: 6px;
+                font-size: 12px;
+                cursor: pointer;
+            }
+            .idc-nav-list {
+                display: flex;
+                flex-direction: column;
+                gap: 5px;
+            }
+            .idc-nav-item {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                width: 100%;
+                text-align: left;
+                background: transparent;
+                color: var(--text-main);
+                border: 1px solid transparent;
+                padding: 9px 10px;
+                border-radius: 8px;
+                font-size: 13px;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.15s ease;
+            }
+            .idc-nav-item:hover {
+                background: var(--bg-main);
+                border-color: var(--border-color);
+            }
+            .idc-nav-item.active {
+                background: var(--primary);
+                color: #ffffff;
+                font-weight: 600;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+            }
+            .idc-nav-icon {
+                font-size: 15px;
+                min-width: 20px;
+                text-align: center;
+            }
+            #idcMainContentArea {
+                flex: 1;
+                min-width: 0;
+            }
+            @media (max-width: 900px) {
+                #idcSidebarShell {
+                    flex-direction: column;
+                }
+                #idcSidebarNav, #idcSidebarNav.collapsed {
+                    width: 100%;
+                    min-width: 100%;
+                    position: static;
+                    box-sizing: border-box;
+                }
+                #idcSidebarNav.collapsed .idc-nav-title-text,
+                #idcSidebarNav.collapsed .idc-nav-label {
+                    display: inline;
+                }
+                .idc-nav-list {
+                    flex-direction: row;
+                    flex-wrap: wrap;
+                }
+                .idc-nav-item {
+                    width: auto;
+                }
+            }
+        `;
+        document.head.appendChild(styleTag);
+
+        const periodEl = dash.querySelector('.period-selector');
+        if (periodEl && !periodEl.id) {
+            periodEl.id = 'periodSelectorBlock';
+        }
+
+        const shell = document.createElement('div');
+        shell.id = 'idcSidebarShell';
+        shell.innerHTML = `
+            <aside id="idcSidebarNav">
+                <div class="idc-nav-header">
+                    <span class="idc-nav-title-text">🧭 Menu Dashboard</span>
+                    <button type="button" class="idc-nav-toggle-btn" onclick="toggleSidebarCollapse()" title="Perkecil/Perbesar Sidebar">☰</button>
+                </div>
+                <div id="idcSidebarMenuList" class="idc-nav-list"></div>
+                <div class="idc-nav-footer" style="margin-top:12px; padding-top:8px; border-top:1px dashed var(--border-color); font-size:11px; color:var(--text-muted);">
+                    Pilih menu di atas untuk menampilkan bagian dashboard secara ringkas.
+                </div>
+            </aside>
+            <main id="idcMainContentArea"></main>
+        `;
+
+        const mainArea = shell.querySelector('#idcMainContentArea');
+        const fixedTopIds = new Set(['deadlineLineUpAlert']);
+        const nodesToMove = [];
+        Array.from(dash.children).forEach(child => {
+            if (child.tagName === 'HEADER') return;
+            if (fixedTopIds.has(child.id)) return;
+            if (child.classList && child.classList.contains('customizer-bar')) return;
+            nodesToMove.push(child);
+        });
+
+        dash.appendChild(shell);
+        nodesToMove.forEach(node => mainArea.appendChild(node));
+    }
+
+    function toggleSidebarCollapse() {
+        const nav = document.getElementById('idcSidebarNav');
+        if (nav) nav.classList.toggle('collapsed');
+    }
+    window.toggleSidebarCollapse = toggleSidebarCollapse;
+
+    function buildSidebarNavigationMenu() {
+        ensureSidebarLayoutShell();
+        const listEl = document.getElementById('idcSidebarMenuList');
+        if (!listEl || !loggedInUser) return;
+
+        const menus = getSidebarMenuDefinitionsForRole(loggedInUser.role);
+        if (!menus.some(m => m.id === currentSidebarMenuId)) {
+            currentSidebarMenuId = 'ALL';
+        }
+
+        listEl.innerHTML = menus.map(m => {
+            const isActive = m.id === currentSidebarMenuId;
+            return `
+                <button type="button" class="idc-nav-item ${isActive ? 'active' : ''}" onclick="selectSidebarMenu('${m.id}')" title="${m.label}">
+                    <span class="idc-nav-icon">${m.icon}</span>
+                    <span class="idc-nav-label">${m.label}</span>
+                </button>
+            `;
+        }).join('');
+    }
+
+    function selectSidebarMenu(menuId) {
+        if (!loggedInUser) return;
+        currentSidebarMenuId = menuId || 'ALL';
+        localStorage.setItem(SIDEBAR_MENU_STATE_KEY, currentSidebarMenuId);
+
+        const menus = getSidebarMenuDefinitionsForRole(loggedInUser.role);
+        const allControllableIds = new Set();
+        menus.forEach(m => (m.targets || []).forEach(tid => allControllableIds.add(tid)));
+
+        const selectedMenu = menus.find(m => m.id === currentSidebarMenuId) || menus[0];
+
+        // Kembalikan default visibilitas sesuai role terlebih dahulu
+        const roleAllowedIds = new Set(allControllableIds);
+        allControllableIds.forEach(tid => {
+            const el = document.getElementById(tid);
+            if (!el) return;
+            if (currentSidebarMenuId === 'ALL') {
+                if (tid === 'mainWorkspaceGrid') {
+                    el.style.display = loggedInUser.role === 'data_entry' ? 'none' : 'grid';
+                } else if (tid === 'supervisorFilterRowZone') {
+                    el.style.display = loggedInUser.role === 'supervisor' ? 'flex' : 'none';
+                } else if (tid === 'periodSelectorBlock') {
+                    el.style.display = loggedInUser.role === 'data_entry' ? 'none' : 'flex';
+                } else {
+                    el.style.display = roleAllowedIds.has(tid) ? 'block' : 'none';
+                }
+            } else {
+                const shouldShow = (selectedMenu.targets || []).includes(tid);
+                if (!shouldShow) {
+                    el.style.display = 'none';
+                } else if (tid === 'mainWorkspaceGrid') {
+                    el.style.display = 'grid';
+                } else if (tid === 'supervisorFilterRowZone' || tid === 'periodSelectorBlock') {
+                    el.style.display = 'flex';
+                } else {
+                    el.style.display = 'block';
+                }
+            }
+        });
+
+        // Sembunyikan panel milik role lain secara tegas
+        const allKnownPanels = [
+            'supervisorKpiPanel', 'supervisorRequestsPanel', 'supervisorControlPanel',
+            'supervisorClarifyExtendPanel', 'supervisorJobOrderMonitorPanel', 'supervisorClosingNotifPanel',
+            'picJobOrderManagerPanel', 'picPerformancePanel', 'dataEntryWorkspacePanel',
+            'clarificationWorkspacePanel', 'extDeadlineMonitorPanel', 'extClosingMonitorPanel',
+            'extPicTransferPanel', 'extAuditTrailPanel', 'periodSelectorBlock',
+            'supervisorFilterRowZone', 'workspaceMainGridHeaderTitle', 'mainWorkspaceGrid'
+        ];
+        allKnownPanels.forEach(pid => {
+            if (!roleAllowedIds.has(pid)) {
+                const el = document.getElementById(pid);
+                if (el) el.style.display = 'none';
+            }
+        });
+
+        buildSidebarNavigationMenu();
+    }
+    window.selectSidebarMenu = selectSidebarMenu;
+
+    // ---------------- INJEKSI PANEL UI KE DASHBOARD ----------------
+    function injectExtensionPanels() {
+        const dash = document.getElementById('dashboardPage');
+        if (!dash || document.getElementById('extDeadlineMonitorPanel')) return;
+
+        const containerTarget = document.getElementById('idcMainContentArea') || dash;
+
+        const wrapper = document.createElement('div');
+        wrapper.id = 'idcExtensionModulesWrapper';
+        wrapper.innerHTML = `
+            <!-- 3. DASHBOARD MONITORING DEADLINE -->
+            <div id="extDeadlineMonitorPanel" class="panel" style="border-color:var(--warning);">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                    <h3 style="margin:0; color:var(--primary);">⏰ Dashboard Monitoring Deadline</h3>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                        <select id="extDeadlineStatusFilter" onchange="renderDeadlineMonitoringDashboard()" style="padding:6px; border-radius:6px; border:1px solid var(--border-color); font-size:12px;">
+                            <option value="ALL">Semua Status Deadline</option>
+                            <option value="OVERDUE">Terlambat (Overdue)</option>
+                            <option value="URGENT">Mendesak (&le; 3 Hari)</option>
+                            <option value="SAFE">Aman (&gt; 3 Hari)</option>
+                            <option value="DONE">Selesai</option>
+                        </select>
+                        <button onclick="renderDeadlineMonitoringDashboard()" style="padding:6px 12px; font-size:12px;">🔄 Refresh</button>
+                    </div>
+                </div>
+                <div class="idc-ext-grid" id="extDeadlineStatsGrid"></div>
+                <div class="idc-table-wrap">
+                    <table id="extDeadlineMonitorTable">
+                        <thead>
+                            <tr>
+                                <th>Sumber / Kategori</th>
+                                <th>Klien / PIC</th>
+                                <th>Uraian Pekerjaan</th>
+                                <th>Deadline</th>
+                                <th>Sisa / Selisih Hari</th>
+                                <th>Status Deadline</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 4. DASHBOARD MONITORING CLOSING -->
+            <div id="extClosingMonitorPanel" class="panel" style="border-color:var(--success);">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                    <h3 style="margin:0; color:var(--success);">🔒 Dashboard Monitoring Closing</h3>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                        <select id="extClosingStatusFilter" onchange="renderClosingMonitoringDashboard()" style="padding:6px; border-radius:6px; border:1px solid var(--border-color); font-size:12px;">
+                            <option value="ALL">Semua Status Closing</option>
+                            <option value="APPROVED">Approved Closed</option>
+                            <option value="PENDING_REVIEW">Menunggu Review Supervisor</option>
+                            <option value="REVISION">Butuh Revisi</option>
+                            <option value="OPEN">Belum Diajukan Closing</option>
+                        </select>
+                        <button onclick="renderClosingMonitoringDashboard()" class="btn-success" style="padding:6px 12px; font-size:12px;">🔄 Refresh</button>
+                    </div>
+                </div>
+                <div class="idc-ext-grid" id="extClosingStatsGrid"></div>
+                <div class="idc-table-wrap">
+                    <table id="extClosingMonitorTable">
+                        <thead>
+                            <tr>
+                                <th>Perusahaan Klien</th>
+                                <th>Periode</th>
+                                <th>PIC</th>
+                                <th>Progress Tugas</th>
+                                <th>Kelengkapan Link</th>
+                                <th>Status Closing</th>
+                                <th>Catatan / Waktu</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 5. MENU BARU: TRANSFER PIC CLIENT (WORKFLOW 5 TAHAP + MODUL HISTORY & REPORT) -->
+            <div id="extPicTransferPanel" class="panel" style="border-color:var(--secondary);">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+                    <h3 style="margin:0; color:var(--primary);">🔁 Transfer PIC Client (Workflow Perpindahan PIC 5 Tahap)</h3>
+                    <span class="idc-pill idc-pill-info">Tahap 1: Draft → Tahap 2: Serah Terima → Tahap 3: Review Supervisor → Tahap 4: Acceptance PIC Baru → Tahap 5: Mutasi Aktif</span>
+                </div>
+
+                <!-- TAHAP 1: PENGAJUAN PERPINDAHAN (PELAKSANA: PIC LAMA & SUPERVISOR) -->
+                <div id="extTransferStage1Form" style="background:var(--bg-main); padding:15px; border-radius:8px; border:1px solid var(--border-color); margin-bottom:16px;">
+                    <div style="font-weight:700; font-size:13px; color:var(--primary); margin-bottom:10px;">📝 Tahap 1 - Pengajuan Perpindahan (Status Awal: Draft)</div>
+                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap:12px;">
+                        <div>
+                            <label style="font-size:12px; font-weight:600; display:block; margin-bottom:4px;">Nama Klien *:</label>
+                            <select id="extTransferClientSelect" onchange="syncTransferCurrentPicInfo()" style="width:100%; padding:7px; border-radius:6px; border:1px solid var(--border-color);"></select>
+                        </div>
+                        <div>
+                            <label style="font-size:12px; font-weight:600; display:block; margin-bottom:4px;">PIC Lama *:</label>
+                            <input type="text" id="extTransferCurrentPic" readonly style="width:100%; padding:7px; border-radius:6px; border:1px solid var(--border-color); background:#e2e8f0; box-sizing:border-box;">
+                        </div>
+                        <div>
+                            <label style="font-size:12px; font-weight:600; display:block; margin-bottom:4px;">PIC Baru *:</label>
+                            <select id="extTransferTargetPicSelect" style="width:100%; padding:7px; border-radius:6px; border:1px solid var(--border-color);"></select>
+                        </div>
+                        <div>
+                            <label style="font-size:12px; font-weight:600; display:block; margin-bottom:4px;">Tanggal Efektif *:</label>
+                            <input type="date" id="extTransferEffectiveDate" style="width:100%; padding:6px; border-radius:6px; border:1px solid var(--border-color); box-sizing:border-box;">
+                        </div>
+                        <div>
+                            <label style="font-size:12px; font-weight:600; display:block; margin-bottom:4px;">Pilihan Alasan *:</label>
+                            <select id="extTransferReasonSelect" onchange="toggleTransferOtherReason()" style="width:100%; padding:7px; border-radius:6px; border:1px solid var(--border-color);">
+                                <option value="Resign">Resign</option>
+                                <option value="Cuti Panjang">Cuti Panjang</option>
+                                <option value="Rotasi Klien">Rotasi Klien</option>
+                                <option value="Beban Kerja">Beban Kerja</option>
+                                <option value="Promosi">Promosi</option>
+                                <option value="Lain-lain">Lain-lain</option>
+                            </select>
+                        </div>
+                        <div id="extTransferOtherReasonBox" style="display:none;">
+                            <label style="font-size:12px; font-weight:600; display:block; margin-bottom:4px;">Keterangan Alasan Lain-lain *:</label>
+                            <input type="text" id="extTransferReasonInput" placeholder="Tuliskan alasan spesifik..." style="width:100%; padding:7px; border-radius:6px; border:1px solid var(--border-color); box-sizing:border-box;">
+                        </div>
+                    </div>
+                    <div style="margin-top:12px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                        <small style="color:var(--text-muted);">*Pengajuan disimpan sebagai <strong>Draft</strong> disertai otomatis pembuatan <strong>Outstanding Handover Report</strong> untuk dilanjutkan ke Tahap 2 - Serah Terima Wajib.</small>
+                        <button onclick="submitPicTransferFlow()" class="btn-success" style="padding:8px 14px; font-size:13px;">➕ Buat Pengajuan Transfer (Draft)</button>
+                    </div>
+                </div>
+
+                <!-- DAFTAR WORKFLOW AKTIF (TAHAP 1 - 4) -->
+                <h4 style="margin:12px 0 8px 0; color:var(--primary);">📌 Daftar Proses Transfer PIC Berjalan (Tahap 1 s/d Tahap 4)</h4>
+                <div id="extActiveTransfersContainer"></div>
+
+                <!-- MODUL BARU 1: TRANSFER HISTORY -->
+                <hr style="margin:20px 0; border:0; border-top:1px solid var(--border-color);">
+                <h4 style="margin:0 0 8px 0; color:var(--primary);">📜 Transfer History (Riwayat Mutasi PIC Selesai)</h4>
+                <div class="idc-table-wrap">
+                    <table id="extTransferHistoryTable">
+                        <thead>
+                            <tr>
+                                <th>Klien</th>
+                                <th>PIC Lama</th>
+                                <th>PIC Baru</th>
+                                <th>Tanggal</th>
+                                <th>Alasan</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <!-- MODUL BARU 2: CLIENT OWNERSHIP HISTORY -->
+                <hr style="margin:20px 0; border:0; border-top:1px solid var(--border-color);">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:8px;">
+                    <h4 style="margin:0; color:var(--primary);">🏢 Client Ownership History (Riwayat PIC per Klien)</h4>
+                    <div>
+                        <label style="font-size:12px; font-weight:600; margin-right:6px;">Filter Klien:</label>
+                        <select id="extOwnershipClientFilter" onchange="renderClientOwnershipHistory()" style="padding:5px 8px; border-radius:6px; border:1px solid var(--border-color); font-size:12px;">
+                            <option value="ALL">Semua Klien</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="extClientOwnershipGrid" class="idc-ext-grid"></div>
+            </div>
+
+            <!-- 1. AUDIT TRAIL -->
+            <div id="extAuditTrailPanel" class="panel" style="border-color:var(--primary);">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                    <div>
+                        <h3 style="margin:0; color:var(--primary);">📜 Audit Trail (Log Aktivitas & Perubahan Sistem)</h3>
+                        <small id="extAuditScopeHint" style="color:var(--text-muted); display:block; margin-top:3px;"></small>
+                    </div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                        <input type="text" id="extAuditSearchInput" oninput="renderAuditTrailDashboard()" placeholder="Cari user, aksi, atau klien..." style="padding:6px 10px; border-radius:6px; border:1px solid var(--border-color); font-size:12px;">
+                        <select id="extAuditCategoryFilter" onchange="renderAuditTrailDashboard()" style="padding:6px; border-radius:6px; border:1px solid var(--border-color); font-size:12px;">
+                            <option value="ALL">Semua Kategori</option>
+                            <option value="AUTH">AUTH</option>
+                            <option value="SECURITY">SECURITY</option>
+                            <option value="WORKSHEET">WORKSHEET</option>
+                            <option value="CLOSING">CLOSING</option>
+                            <option value="PIC_TRANSFER">PIC_TRANSFER</option>
+                            <option value="JOB_ORDER">JOB_ORDER</option>
+                            <option value="MASTER">MASTER</option>
+                        </select>
+                        <button onclick="exportAuditTrailCsv()" style="padding:6px 12px; font-size:12px;">⬇️ Export CSV</button>
+                    </div>
+                </div>
+                <div class="idc-table-wrap">
+                    <table id="extAuditTrailTable">
+                        <thead>
+                            <tr>
+                                <th>Waktu</th>
+                                <th>Pelaku (Actor)</th>
+                                <th>Kategori</th>
+                                <th>Aksi</th>
+                                <th>Target</th>
+                                <th>Detail Perubahan</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+
+        const clarifySection = document.getElementById('clarificationWorkspacePanel');
+        if (clarifySection && clarifySection.parentNode === containerTarget) {
+            containerTarget.insertBefore(wrapper, clarifySection);
+        } else {
+            containerTarget.appendChild(wrapper);
+        }
+
+        const effDateEl = document.getElementById('extTransferEffectiveDate');
+        if (effDateEl && !effDateEl.value) {
+            effDateEl.value = new Date().toISOString().split('T')[0];
+        }
+    }
+
+    // ---------------- 3. DASHBOARD MONITORING DEADLINE ----------------
+    function renderDeadlineMonitoringDashboard() {
+        const tbody = document.querySelector('#extDeadlineMonitorTable tbody');
+        const statsGrid = document.getElementById('extDeadlineStatsGrid');
+        if (!tbody || !statsGrid) return;
+
+        const filterVal = (document.getElementById('extDeadlineStatusFilter') || {}).value || 'ALL';
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const items = [];
+        if (!loggedInUser || loggedInUser.role !== 'data_entry') {
+            (appWorksheets || []).filter(w => w.period === activePeriod).forEach(ws => {
+                if (loggedInUser && loggedInUser.role === 'pic' && ws.picId !== loggedInUser.id) return;
+                const picName = ((appUsers || []).find(u => u.id === ws.picId) || {}).name || 'Unassigned';
+                (ws.tasks || []).forEach(t => {
+                    let diffDays = null;
+                    let statusKey = 'SAFE';
+                    let statusLabel = 'AMAN';
+                    let diffText = '-';
+
+                    if (t.done) {
+                        statusKey = 'DONE';
+                        statusLabel = 'SELESAI';
+                        diffText = t.completionDate ? `Selesai (${t.completionDate})` : 'Selesai';
+                    } else if (t.deadline) {
+                        const dl = new Date(t.deadline);
+                        dl.setHours(0, 0, 0, 0);
+                        diffDays = Math.ceil((dl.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                        if (diffDays < 0) {
+                            statusKey = 'OVERDUE';
+                            statusLabel = 'TERLAMBAT';
+                            diffText = `Lewat ${Math.abs(diffDays)} hari`;
+                        } else if (diffDays <= 3) {
+                            statusKey = 'URGENT';
+                            statusLabel = 'MENDESAK';
+                            diffText = diffDays === 0 ? 'Hari ini' : `Sisa ${diffDays} hari`;
+                        } else {
+                            statusKey = 'SAFE';
+                            statusLabel = 'AMAN';
+                            diffText = `Sisa ${diffDays} hari`;
+                        }
+                    }
+
+                    items.push({
+                        source: `Worksheet (${String(t.category || '').toUpperCase()})`,
+                        clientPic: `${ws.clientName} — ${picName}`,
+                        desc: t.name,
+                        deadline: t.deadline || '-',
+                        diffText,
+                        diffDays: diffDays === null ? 9999 : diffDays,
+                        statusKey,
+                        statusLabel
+                    });
+                });
+            });
+        }
+
+        (appJobOrders || []).forEach(jo => {
+            if (loggedInUser && loggedInUser.role === 'pic' && jo.picId !== loggedInUser.id) return;
+            if (loggedInUser && loggedInUser.role === 'data_entry' && jo.deId !== loggedInUser.id && jo.dataEntryId !== loggedInUser.id) return;
+
+            let diffDays = null;
+            let statusKey = 'SAFE';
+            let statusLabel = 'AMAN';
+            let diffText = '-';
+
+            if (jo.status === 'approved' || jo.status === 'Selesai') {
+                statusKey = 'DONE';
+                statusLabel = 'SELESAI';
+                diffText = 'Selesai';
+            } else if (jo.deadline) {
+                const dl = new Date(jo.deadline);
+                dl.setHours(0, 0, 0, 0);
+                diffDays = Math.ceil((dl.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                if (diffDays < 0) {
+                    statusKey = 'OVERDUE';
+                    statusLabel = 'TERLAMBAT';
+                    diffText = `Lewat ${Math.abs(diffDays)} hari`;
+                } else if (diffDays <= 3) {
+                    statusKey = 'URGENT';
+                    statusLabel = 'MENDESAK';
+                    diffText = diffDays === 0 ? 'Hari ini' : `Sisa ${diffDays} hari`;
+                } else {
+                    statusKey = 'SAFE';
+                    statusLabel = 'AMAN';
+                    diffText = `Sisa ${diffDays} hari`;
+                }
+            }
+
+            items.push({
+                source: 'Job Order',
+                clientPic: `${jo.clientName || '-'} — ${jo.picName || '-'}`,
+                desc: jo.description || '-',
+                deadline: jo.deadline || '-',
+                diffText,
+                diffDays: diffDays === null ? 9999 : diffDays,
+                statusKey,
+                statusLabel
+            });
+        });
+
+        const countOverdue = items.filter(i => i.statusKey === 'OVERDUE').length;
+        const countUrgent = items.filter(i => i.statusKey === 'URGENT').length;
+        const countSafe = items.filter(i => i.statusKey === 'SAFE').length;
+        const countDone = items.filter(i => i.statusKey === 'DONE').length;
+
+        statsGrid.innerHTML = `
+            <div class="idc-ext-stat" style="border-left-color:var(--danger);"><div class="stat-label">Terlambat (Overdue)</div><div class="stat-num" style="color:var(--danger);">${countOverdue}</div></div>
+            <div class="idc-ext-stat" style="border-left-color:var(--warning);"><div class="stat-label">Mendesak (&le; 3 Hari)</div><div class="stat-num" style="color:#b45309;">${countUrgent}</div></div>
+            <div class="idc-ext-stat" style="border-left-color:var(--primary);"><div class="stat-label">Aman (&gt; 3 Hari)</div><div class="stat-num">${countSafe}</div></div>
+            <div class="idc-ext-stat" style="border-left-color:var(--success);"><div class="stat-label">Selesai</div><div class="stat-num" style="color:var(--success);">${countDone}</div></div>
+        `;
+
+        const filtered = filterVal === 'ALL' ? items : items.filter(i => i.statusKey === filterVal);
+        filtered.sort((a, b) => a.diffDays - b.diffDays);
+
+        if (filtered.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Tidak ada data deadline sesuai filter.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = filtered.slice(0, 60).map(it => {
+            const pillClass = it.statusKey === 'OVERDUE' ? 'idc-pill-bad' : (it.statusKey === 'URGENT' ? 'idc-pill-warn' : (it.statusKey === 'DONE' ? 'idc-pill-ok' : 'idc-pill-info'));
+            return `
+                <tr>
+                    <td><strong>${it.source}</strong></td>
+                    <td>${it.clientPic}</td>
+                    <td>${it.desc}</td>
+                    <td>${it.deadline}</td>
+                    <td>${it.diffText}</td>
+                    <td><span class="idc-pill ${pillClass}">${it.statusLabel}</span></td>
+                </tr>
+            `;
+        }).join('');
+    }
+    window.renderDeadlineMonitoringDashboard = renderDeadlineMonitoringDashboard;
+
+    // ---------------- 4. DASHBOARD MONITORING CLOSING ----------------
+    function renderClosingMonitoringDashboard() {
+        const tbody = document.querySelector('#extClosingMonitorTable tbody');
+        const statsGrid = document.getElementById('extClosingStatsGrid');
+        if (!tbody || !statsGrid) return;
+
+        const filterVal = (document.getElementById('extClosingStatusFilter') || {}).value || 'ALL';
+        let sheets = (appWorksheets || []).filter(w => w.period === activePeriod);
+        if (loggedInUser && loggedInUser.role === 'pic') {
+            sheets = sheets.filter(w => w.picId === loggedInUser.id);
+        }
+
+        const rows = sheets.map(ws => {
+            const tasks = ws.tasks || [];
+            const doneCount = tasks.filter(t => t.done).length;
+            const pct = tasks.length > 0 ? Math.round((doneCount / tasks.length) * 100) : 0;
+            const picName = ((appUsers || []).find(u => u.id === ws.picId) || {}).name || 'Unassigned';
+
+            const revStatus = (ws.supervisorReview && ws.supervisorReview.status) || 'none';
+            let statusKey = 'OPEN';
+            let statusLabel = 'BELUM CLOSING';
+            let pillClass = 'idc-pill-info';
+
+            if (ws.isClosed && revStatus === 'approved') {
+                statusKey = 'APPROVED';
+                statusLabel = 'APPROVED CLOSED';
+                pillClass = 'idc-pill-ok';
+            } else if (ws.isClosed) {
+                statusKey = 'PENDING_REVIEW';
+                statusLabel = 'MENUNGGU REVIEW';
+                pillClass = 'idc-pill-warn';
+            } else if (revStatus === 'revision') {
+                statusKey = 'REVISION';
+                statusLabel = 'BUTUH REVISI';
+                pillClass = 'idc-pill-bad';
+            }
+
+            const att = ws.attachments || {};
+            const reqLinks = [];
+            if (ws.services && ws.services.accounting) reqLinks.push(att.accounting ? 'AK:✅' : 'AK:❌');
+            if (ws.services && ws.services.tax) reqLinks.push(att.tax ? 'PJ:✅' : 'PJ:❌');
+            if (ws.services && ws.services.special) reqLinks.push(att.special ? 'SP:✅' : 'SP:➖');
+            const linkSummary = reqLinks.length ? reqLinks.join(' | ') : '-';
+
+            const infoText = (ws.supervisorReview && ws.supervisorReview.notes)
+                ? `${ws.supervisorReview.notes} (${ws.supervisorReview.timestamp || ''})`
+                : (ws.closingRequestedTime || '-');
+
+            return {
+                clientName: ws.clientName,
+                period: ws.period,
+                picName,
+                progressText: `${pct}% (${doneCount}/${tasks.length})`,
+                linkSummary,
+                statusKey,
+                statusLabel,
+                pillClass,
+                infoText
+            };
+        });
+
+        const cApproved = rows.filter(r => r.statusKey === 'APPROVED').length;
+        const cPending = rows.filter(r => r.statusKey === 'PENDING_REVIEW').length;
+        const cRevision = rows.filter(r => r.statusKey === 'REVISION').length;
+        const cOpen = rows.filter(r => r.statusKey === 'OPEN').length;
+
+        statsGrid.innerHTML = `
+            <div class="idc-ext-stat" style="border-left-color:var(--success);"><div class="stat-label">Approved Closed</div><div class="stat-num" style="color:var(--success);">${cApproved}</div></div>
+            <div class="idc-ext-stat" style="border-left-color:var(--warning);"><div class="stat-label">Menunggu Review</div><div class="stat-num" style="color:#b45309;">${cPending}</div></div>
+            <div class="idc-ext-stat" style="border-left-color:var(--danger);"><div class="stat-label">Butuh Revisi</div><div class="stat-num" style="color:var(--danger);">${cRevision}</div></div>
+            <div class="idc-ext-stat" style="border-left-color:var(--primary);"><div class="stat-label">Belum Closing</div><div class="stat-num">${cOpen}</div></div>
+        `;
+
+        const filtered = filterVal === 'ALL' ? rows : rows.filter(r => r.statusKey === filterVal);
+        if (filtered.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Tidak ada data closing pada periode ini.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = filtered.map(r => `
+            <tr>
+                <td><strong>${r.clientName}</strong></td>
+                <td>${r.period}</td>
+                <td>${r.picName}</td>
+                <td>${r.progressText}</td>
+                <td><small>${r.linkSummary}</small></td>
+                <td><span class="idc-pill ${r.pillClass}">${r.statusLabel}</span></td>
+                <td><small>${r.infoText}</small></td>
+            </tr>
+        `).join('');
+    }
+    window.renderClosingMonitoringDashboard = renderClosingMonitoringDashboard;
+
+    // ---------------- 5. WORKFLOW PERPINDAHAN PIC ATAS KLIEN (5 TAHAP) ----------------
+    function toggleTransferOtherReason() {
+        const sel = document.getElementById('extTransferReasonSelect');
+        const box = document.getElementById('extTransferOtherReasonBox');
+        if (!sel || !box) return;
+        box.style.display = sel.value === 'Lain-lain' ? 'block' : 'none';
+    }
+    window.toggleTransferOtherReason = toggleTransferOtherReason;
+
+    function populatePicTransferSelectors() {
+        ensureClientOwnershipInitialized();
+        const clientSel = document.getElementById('extTransferClientSelect');
+        const targetPicSel = document.getElementById('extTransferTargetPicSelect');
+        const ownerFilterSel = document.getElementById('extOwnershipClientFilter');
+        if (!clientSel || !targetPicSel) return;
+
+        const prevClient = clientSel.value;
+        const prevTarget = targetPicSel.value;
+        const prevOwnerFilter = ownerFilterSel ? ownerFilterSel.value : 'ALL';
+
+        let availableClients = (appClients || []).filter(c => c.isActive);
+        if (loggedInUser && loggedInUser.role === 'pic') {
+            availableClients = availableClients.filter(c => c.pic === loggedInUser.id);
+        }
+
+        clientSel.innerHTML = availableClients.length
+            ? availableClients.map(c => `<option value="${c.id}">${c.name}</option>`).join('')
+            : `<option value="">-- Tidak ada klien --</option>`;
+
+        if (prevClient && availableClients.some(c => c.id === prevClient)) {
+            clientSel.value = prevClient;
+        }
+
+        const pics = (appUsers || []).filter(u => u.role === 'pic' && u.id !== 'unassigned');
+        targetPicSel.innerHTML = pics.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+        if (prevTarget && pics.some(p => p.id === prevTarget)) {
+            targetPicSel.value = prevTarget;
+        }
+
+        if (ownerFilterSel) {
+            const allClients = appClients || [];
+            ownerFilterSel.innerHTML = `<option value="ALL">Semua Klien</option>` +
+                allClients.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+            if (prevOwnerFilter && (prevOwnerFilter === 'ALL' || allClients.some(c => c.id === prevOwnerFilter))) {
+                ownerFilterSel.value = prevOwnerFilter;
+            }
+        }
+
+        syncTransferCurrentPicInfo();
+    }
+
+    function syncTransferCurrentPicInfo() {
+        const clientSel = document.getElementById('extTransferClientSelect');
+        const curInput = document.getElementById('extTransferCurrentPic');
+        if (!clientSel || !curInput) return;
+        const cl = (appClients || []).find(c => c.id === clientSel.value);
+        if (!cl) {
+            curInput.value = '-';
+            return;
+        }
+        const u = (appUsers || []).find(item => item.id === cl.pic);
+        curInput.value = u ? u.name : 'Unassigned';
+    }
+    window.syncTransferCurrentPicInfo = syncTransferCurrentPicInfo;
+
+    // Tahap 1: Buat Pengajuan Perpindahan (Pelaksana: PIC Lama dan Supervisor, Status awal: Draft)
+    function submitPicTransferFlow() {
+        if (!loggedInUser || (loggedInUser.role !== 'pic' && loggedInUser.role !== 'supervisor')) {
+            return alert("Hanya PIC Lama atau Supervisor yang dapat mengajukan perpindahan PIC.");
+        }
+
+        const clientId = (document.getElementById('extTransferClientSelect') || {}).value;
+        const newPicId = (document.getElementById('extTransferTargetPicSelect') || {}).value;
+        const effectiveDate = (document.getElementById('extTransferEffectiveDate') || {}).value;
+        const reasonChoice = (document.getElementById('extTransferReasonSelect') || {}).value;
+        const otherReasonText = ((document.getElementById('extTransferReasonInput') || {}).value || '').trim();
+
+        if (!clientId) return alert("Nama Klien wajib dipilih!");
+        if (!newPicId) return alert("PIC Baru wajib dipilih!");
+        if (!effectiveDate) return alert("Tanggal Efektif wajib diisi!");
+        if (!reasonChoice) return alert("Pilihan alasan wajib dipilih!");
+        if (reasonChoice === 'Lain-lain' && !otherReasonText) {
+            return alert("Harap isi keterangan untuk pilihan alasan Lain-lain!");
+        }
+
+        const client = (appClients || []).find(c => c.id === clientId);
+        if (!client) return alert("Klien tidak ditemukan.");
+        if (loggedInUser.role === 'pic' && client.pic !== loggedInUser.id) {
+            return alert("Anda hanya dapat mengajukan perpindahan untuk klien yang Anda tangani.");
+        }
+        if (client.pic === newPicId) {
+            return alert("PIC Baru tidak boleh sama dengan PIC Lama.");
+        }
+
+        const hasOngoing = (appPicTransfers || []).some(t =>
+            t.clientId === clientId &&
+            ['Draft', 'Menunggu Review Supervisor', 'Disetujui'].includes(t.status)
+        );
+        if (hasOngoing) {
+            return alert(`Masih terdapat proses perpindahan PIC yang sedang berjalan untuk klien ${client.name}. Selesaikan atau batalkan proses sebelumnya terlebih dahulu.`);
+        }
+
+        const oldPicId = client.pic;
+        const oldPicName = ((appUsers || []).find(u => u.id === oldPicId) || {}).name || 'Unassigned';
+        const newPicName = ((appUsers || []).find(u => u.id === newPicId) || {}).name || newPicId;
+        const finalReason = reasonChoice === 'Lain-lain' ? `Lain-lain: ${otherReasonText}` : reasonChoice;
+
+        const checklistInit = {};
+        ALL_CHECKLIST_KEYS.forEach(k => { checklistInit[k] = false; });
+
+        const handoverReport = generateOutstandingHandoverReport(clientId, oldPicId);
+
+        const newTransfer = {
+            id: 'trf_' + Date.now(),
+            clientId,
+            clientName: client.name,
+            fromPicId: oldPicId,
+            fromPicName: oldPicName,
+            toPicId: newPicId,
+            toPicName: newPicName,
+            effectiveDate,
+            reasonCategory: reasonChoice,
+            reason: finalReason,
+            stage: 1,
+            status: 'Draft',
+            handoverStatus: 'Belum Lengkap',
+            checklist: checklistInit,
+            supervisorNotes: '',
+            newPicReviewChecked: {
+                riwayat: false,
+                outstanding: false,
+                deadline: false
+            },
+            handoverReport,
+            requestedBy: getActorName(),
+            createdAt: new Date().toLocaleString('id-ID'),
+            acceptedAt: ''
+        };
+
+        appPicTransfers.unshift(newTransfer);
+        localStorage.setItem(PIC_TRANSFER_KEY, JSON.stringify(appPicTransfers));
+
+        if (typeof addNotification === 'function') {
+            if (oldPicId && oldPicId !== 'unassigned' && oldPicId !== loggedInUser.id) {
+                addNotification(oldPicId, `Draft pengajuan transfer PIC klien "${client.name}" ke ${newPicName} telah dibuat. Harap lengkapi Checklist Serah Terima Wajib.`);
+            }
+            addNotification('supervisor_idc', `Draft pengajuan transfer PIC klien "${client.name}" (${oldPicName} → ${newPicName}) dibuat oleh ${getActorName()}.`);
+        }
+
+        saveStateToLocalStorage();
+        recordAuditTrail('PIC_TRANSFER', 'STAGE1_DRAFT_TRANSFER', client.name, `Draft ${oldPicName} -> ${newPicName}, Efektif: ${effectiveDate}, Alasan: ${finalReason}`, client.id);
+
+        if (document.getElementById('extTransferReasonInput')) {
+            document.getElementById('extTransferReasonInput').value = '';
+        }
+        renderPicTransferTable();
+        alert(`Tahap 1 berhasil disimpan dengan status "Draft".\nSilakan lengkapi Checklist Serah Terima Wajib (Tahap 2) di bawah.`);
+    }
+    window.submitPicTransferFlow = submitPicTransferFlow;
+
+    // Tahap 2: Toggle item Checklist Serah Terima Wajib
+    function toggleTransferChecklistItem(transferId, itemKey, isChecked) {
+        const trf = (appPicTransfers || []).find(t => t.id === transferId);
+        if (!trf) return;
+        const canEdit = loggedInUser && (loggedInUser.id === trf.fromPicId || loggedInUser.role === 'supervisor');
+        if (!canEdit) return alert("Hanya PIC Lama atau Supervisor yang dapat mengisi checklist serah terima.");
+        if (trf.status !== 'Draft' && trf.status !== 'Ditolak') return;
+
+        trf.checklist = trf.checklist || {};
+        trf.checklist[itemKey] = !!isChecked;
+        const summary = computeChecklistSummary(trf.checklist);
+        trf.handoverStatus = summary.label;
+
+        localStorage.setItem(PIC_TRANSFER_KEY, JSON.stringify(appPicTransfers));
+        renderPicTransferTable();
+    }
+    window.toggleTransferChecklistItem = toggleTransferChecklistItem;
+
+    // Tahap 2 -> Tahap 3: Ajukan Serah Terima ke Review Supervisor
+    function submitHandoverToSupervisor(transferId) {
+        const trf = (appPicTransfers || []).find(t => t.id === transferId);
+        if (!trf) return;
+
+        const summary = computeChecklistSummary(trf.checklist);
+        if (!summary.isComplete) {
+            return alert(`❌ Status Serah Terima masih "${summary.label}" (${summary.checkedCount}/${summary.total}).\nPIC lama wajib melengkapi seluruh Checklist Serah Terima Wajib (Administrasi, Accounting, Tax, dan Outstanding Issue) sebelum diajukan ke Supervisor.`);
+        }
+
+        trf.handoverStatus = 'Lengkap';
+        trf.stage = 3;
+        trf.status = 'Menunggu Review Supervisor';
+        trf.handoverReport = generateOutstandingHandoverReport(trf.clientId, trf.fromPicId);
+
+        localStorage.setItem(PIC_TRANSFER_KEY, JSON.stringify(appPicTransfers));
+        if (typeof addNotification === 'function') {
+            addNotification('supervisor_idc', `Tahap 3 - Review Supervisor diperlukan untuk Transfer PIC Klien "${trf.clientName}" (${trf.fromPicName} → ${trf.toPicName}).`);
+        }
+        saveStateToLocalStorage();
+        recordAuditTrail('PIC_TRANSFER', 'STAGE2_SUBMIT_HANDOVER', trf.clientName, `Checklist serah terima Lengkap (${summary.checkedCount}/${summary.total}), diteruskan ke Review Supervisor`, trf.clientId);
+        renderPicTransferTable();
+        alert(`Checklist Serah Terima berstatus "Lengkap". Pengajuan diteruskan ke Tahap 3 - Review Supervisor.`);
+    }
+    window.submitHandoverToSupervisor = submitHandoverToSupervisor;
+
+    // Tahap 3: Review Supervisor (Disetujui / Ditolak)
+    function decidePicTransferFlow(transferId, approve) {
+        if (!loggedInUser || loggedInUser.role !== 'supervisor') {
+            return alert("Hanya Supervisor yang berwenang melakukan Review tahap ini.");
+        }
+        const trf = (appPicTransfers || []).find(t => t.id === transferId);
+        if (!trf) return;
+
+        const notesEl = document.getElementById(`trfSupNote_${transferId}`);
+        const noteText = notesEl ? notesEl.value.trim() : '';
+
+        if (approve) {
+            trf.stage = 4;
+            trf.status = 'Disetujui';
+            trf.supervisorNotes = noteText || 'Kelengkapan dokumen, job order, klarifikasi & progress terverifikasi.';
+            if (typeof addNotification === 'function') {
+                addNotification(trf.toPicId, `Anda ditunjuk sebagai PIC Baru untuk klien "${trf.clientName}" (efektif ${trf.effectiveDate}). Silakan lakukan review dan klik "Terima Serah Terima" pada menu Transfer PIC Client.`);
+                if (trf.fromPicId && trf.fromPicId !== 'unassigned') {
+                    addNotification(trf.fromPicId, `Pengajuan transfer PIC klien "${trf.clientName}" telah DISETUJUI Supervisor. Menunggu penerimaan (Acceptance) oleh PIC Baru (${trf.toPicName}).`);
+                }
+            }
+            recordAuditTrail('PIC_TRANSFER', 'STAGE3_SUPERVISOR_APPROVED', trf.clientName, `Disetujui Supervisor (${loggedInUser.name}). Catatan: ${trf.supervisorNotes}`, trf.clientId);
+            alert(`Transfer PIC untuk ${trf.clientName} berstatus "Disetujui". Menunggu Tahap 4 - Acceptance oleh PIC Baru (${trf.toPicName}).`);
+        } else {
+            if (!noteText) {
+                return alert("Harap isi catatan masalah/alasan penolakan sebelum menolak pengajuan transfer.");
+            }
+            trf.stage = 2;
+            trf.status = 'Ditolak';
+            trf.supervisorNotes = noteText;
+            if (typeof addNotification === 'function' && trf.fromPicId && trf.fromPicId !== 'unassigned') {
+                addNotification(trf.fromPicId, `Pengajuan transfer PIC klien "${trf.clientName}" DITOLAK oleh Supervisor. Alasan: ${noteText}`);
+            }
+            recordAuditTrail('PIC_TRANSFER', 'STAGE3_SUPERVISOR_REJECTED', trf.clientName, `Ditolak Supervisor (${loggedInUser.name}). Alasan: ${noteText}`, trf.clientId);
+            alert(`Pengajuan transfer PIC untuk ${trf.clientName} berstatus "Ditolak". PIC lama dapat memperbaiki kelengkapan dan mengajukan kembali.`);
+        }
+
+        localStorage.setItem(PIC_TRANSFER_KEY, JSON.stringify(appPicTransfers));
+        saveStateToLocalStorage();
+        renderPicTransferTable();
+    }
+    window.decidePicTransferFlow = decidePicTransferFlow;
+
+    // Tahap 4: Checkbox review wajib oleh PIC Baru
+    function toggleNewPicReviewCheck(transferId, fieldKey, isChecked) {
+        const trf = (appPicTransfers || []).find(t => t.id === transferId);
+        if (!trf) return;
+        if (!loggedInUser || (loggedInUser.id !== trf.toPicId && loggedInUser.role !== 'supervisor')) return;
+        trf.newPicReviewChecked = trf.newPicReviewChecked || { riwayat: false, outstanding: false, deadline: false };
+        trf.newPicReviewChecked[fieldKey] = !!isChecked;
+        localStorage.setItem(PIC_TRANSFER_KEY, JSON.stringify(appPicTransfers));
+        renderPicTransferTable();
+    }
+    window.toggleNewPicReviewCheck = toggleNewPicReviewCheck;
+
+    // Tahap 4 -> Tahap 5: Acceptance PIC Baru & Eksekusi Mutasi Aktif Otomatis
+    function acceptPicTransferHandover(transferId) {
+        const trf = (appPicTransfers || []).find(t => t.id === transferId);
+        if (!trf) return;
+        if (!loggedInUser || (loggedInUser.id !== trf.toPicId && loggedInUser.role !== 'supervisor')) {
+            return alert("Hanya PIC Baru yang ditunjuk yang dapat melakukan Acceptance serah terima ini.");
+        }
+
+        const rev = trf.newPicReviewChecked || {};
+        if (!rev.riwayat || !rev.outstanding || !rev.deadline) {
+            return alert("❌ PIC baru wajib mencentang verifikasi review atas:\n1. Riwayat pekerjaan\n2. Outstanding task\n3. Deadline berjalan\nsebelum menekan tombol Terima Serah Terima.");
+        }
+
+        trf.stage = 5;
+        trf.status = 'Accepted';
+        trf.acceptedAt = new Date().toLocaleString('id-ID');
+
+        executeActiveClientMutation(trf);
+
+        localStorage.setItem(PIC_TRANSFER_KEY, JSON.stringify(appPicTransfers));
+        saveStateToLocalStorage();
+
+        populatePicTransferSelectors();
+        renderPicTransferTable();
+        renderClientOwnershipHistory();
+        if (typeof renderMainWorkspace === 'function') renderMainWorkspace();
+        if (typeof renderSupervisorTables === 'function') renderSupervisorTables();
+        if (typeof renderClarificationNotesTable === 'function') renderClarificationNotesTable();
+        if (typeof buildPicClientDropdown === 'function' && loggedInUser.role === 'pic') buildPicClientDropdown();
+        if (typeof calculatePicPerformanceStats === 'function' && loggedInUser.role === 'pic') calculatePicPerformanceStats();
+        renderDeadlineMonitoringDashboard();
+        renderClosingMonitoringDashboard();
+
+        alert(`✅ Serah Terima Diterima (Status: Accepted)!\n\nMutasi Aktif selesai: Seluruh worksheet aktif, catatan klarifikasi, dan monitoring KPI ke depan untuk ${trf.clientName} telah dipindahkan ke ${trf.toPicName}, serta history PIC lama tetap tersimpan.`);
+    }
+    window.acceptPicTransferHandover = acceptPicTransferHandover;
+
+    // Tahap 5 - Mutasi Aktif Otomatis
+    function executeActiveClientMutation(trf) {
+        ensureClientOwnershipInitialized();
+        const client = (appClients || []).find(c => c.id === trf.clientId);
+        if (!client) return;
+
+        const effectivePeriod = (trf.effectiveDate || '').slice(0, 7) || activePeriod;
+
+        client.pic = trf.toPicId;
+
+        (appWorksheets || []).forEach(ws => {
+            if (ws.clientId === trf.clientId) {
+                const isApprovedClosed = ws.isClosed && ws.supervisorReview && ws.supervisorReview.status === 'approved';
+                if (ws.period >= effectivePeriod || !isApprovedClosed) {
+                    ws.picId = trf.toPicId;
+                    ws.picName = trf.toPicName;
+                }
+            }
+        });
+
+        (appClarifications || []).forEach(c => {
+            if (c.clientId === trf.clientId && c.status !== 'solved') {
+                if (!c.previousPicName) c.previousPicName = c.picName;
+                c.picId = trf.toPicId;
+                c.picName = trf.toPicName;
+            }
+        });
+
+        (appJobOrders || []).forEach(jo => {
+            if (jo.clientId === trf.clientId && jo.status !== 'approved' && jo.status !== 'Selesai') {
+                jo.picId = trf.toPicId;
+                jo.picName = trf.toPicName;
+            }
+        });
+
+        const historyList = appClientOwnershipHistory[trf.clientId] || [];
+        const prevEndDate = minusOneDayStr(trf.effectiveDate);
+        if (historyList.length > 0 && !historyList[historyList.length - 1].endDate) {
+            historyList[historyList.length - 1].endDate = prevEndDate;
+        }
+        historyList.push({
+            picId: trf.toPicId,
+            picName: trf.toPicName,
+            startDate: trf.effectiveDate,
+            endDate: null,
+            transferId: trf.id,
+            reason: trf.reason
+        });
+        appClientOwnershipHistory[trf.clientId] = historyList;
+        localStorage.setItem(CLIENT_OWNERSHIP_KEY, JSON.stringify(appClientOwnershipHistory));
+
+        if (typeof addNotification === 'function') {
+            addNotification(trf.toPicId, `Mutasi Aktif selesai: Klien "${trf.clientName}" resmi menjadi tanggung jawab Anda mulai ${trf.effectiveDate}.`);
+            if (trf.fromPicId && trf.fromPicId !== 'unassigned') {
+                addNotification(trf.fromPicId, `Serah terima klien "${trf.clientName}" telah diterima oleh ${trf.toPicName} (Status: Accepted). History kepemilikan Anda tetap tersimpan.`);
+            }
+            addNotification('supervisor_idc', `Mutasi Aktif selesai: Klien "${trf.clientName}" resmi berpindah dari ${trf.fromPicName} ke ${trf.toPicName} efektif ${trf.effectiveDate}.`);
+        }
+
+        recordAuditTrail(
+            'PIC_TRANSFER',
+            'STAGE4_5_ACCEPTED_ACTIVE_MUTATION',
+            trf.clientName,
+            `Accepted oleh ${trf.toPicName}. Mutasi worksheet aktif, klarifikasi & KPI dari ${trf.fromPicName} -> ${trf.toPicName} (Efektif: ${trf.effectiveDate})`,
+            trf.clientId
+        );
+    }
+
+    function cancelDraftTransfer(transferId) {
+        const idx = (appPicTransfers || []).findIndex(t => t.id === transferId);
+        if (idx === -1) return;
+        const trf = appPicTransfers[idx];
+        if (!confirm(`Batalkan pengajuan transfer PIC untuk klien ${trf.clientName}?`)) return;
+        appPicTransfers.splice(idx, 1);
+        localStorage.setItem(PIC_TRANSFER_KEY, JSON.stringify(appPicTransfers));
+        saveStateToLocalStorage();
+        recordAuditTrail('PIC_TRANSFER', 'CANCEL_TRANSFER_DRAFT', trf.clientName, `Pengajuan transfer dibatalkan oleh ${getActorName()}`, trf.clientId);
+        renderPicTransferTable();
+    }
+    window.cancelDraftTransfer = cancelDraftTransfer;
+
+    function renderPicTransferTable() {
+        const activeContainer = document.getElementById('extActiveTransfersContainer');
+        const historyTbody = document.querySelector('#extTransferHistoryTable tbody');
+        if (!activeContainer || !historyTbody) return;
+
+        let allTransfers = appPicTransfers || [];
+        if (loggedInUser && loggedInUser.role === 'pic') {
+            allTransfers = allTransfers.filter(t => t.fromPicId === loggedInUser.id || t.toPicId === loggedInUser.id);
+        }
+
+        const activeList = allTransfers.filter(t => t.status !== 'Accepted');
+        const acceptedList = allTransfers.filter(t => t.status === 'Accepted');
+
+        if (activeList.length === 0) {
+            activeContainer.innerHTML = `<div style="padding:14px; text-align:center; color:var(--text-muted); background:var(--bg-main); border-radius:8px; border:1px dashed var(--border-color);">Tidak ada proses perpindahan PIC yang sedang berjalan.</div>`;
+        } else {
+            activeContainer.innerHTML = activeList.map(trf => {
+                const ckSummary = computeChecklistSummary(trf.checklist);
+                const isOldPicOrSup = loggedInUser && (loggedInUser.id === trf.fromPicId || loggedInUser.role === 'supervisor');
+                const isSupervisor = loggedInUser && loggedInUser.role === 'supervisor';
+                const isNewPicOrSup = loggedInUser && (loggedInUser.id === trf.toPicId || loggedInUser.role === 'supervisor');
+
+                const canEditChecklist = isOldPicOrSup && (trf.status === 'Draft' || trf.status === 'Ditolak');
+                const canReviewNewPic = isNewPicOrSup && trf.status === 'Disetujui';
+
+                let statusPillClass = 'idc-pill-info';
+                if (trf.status === 'Menunggu Review Supervisor') statusPillClass = 'idc-pill-warn';
+                else if (trf.status === 'Disetujui') statusPillClass = 'idc-pill-ok';
+                else if (trf.status === 'Ditolak') statusPillClass = 'idc-pill-bad';
+
+                const liveReport = generateOutstandingHandoverReport(trf.clientId, trf.fromPicId);
+                const rev = trf.newPicReviewChecked || { riwayat: false, outstanding: false, deadline: false };
+
+                let stageActionHtml = '';
+                if (trf.status === 'Draft' || trf.status === 'Ditolak') {
+                    if (isOldPicOrSup) {
+                        stageActionHtml = `
+                            <div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; margin-top:10px;">
+                                <button onclick="cancelDraftTransfer('${trf.id}')" class="btn-danger" style="padding:6px 12px; font-size:12px;">🗑️ Batalkan Pengajuan</button>
+                                <button onclick="submitHandoverToSupervisor('${trf.id}')" class="btn-success" style="padding:6px 14px; font-size:12px;">📤 Selesai Serah Terima & Ajukan Review Supervisor</button>
+                            </div>
+                        `;
+                    }
+                } else if (trf.status === 'Menunggu Review Supervisor') {
+                    if (isSupervisor) {
+                        stageActionHtml = `
+                            <div style="margin-top:10px; background:var(--bg-card); padding:10px; border-radius:6px; border:1px solid var(--border-color);">
+                                <div style="font-weight:700; font-size:12px; color:var(--primary); margin-bottom:6px;">🔍 Tahap 3 - Pemeriksaan Supervisor (Dokumen, Job Order, Klarifikasi, Progress & Outstanding)</div>
+                                <div style="font-size:12px; margin-bottom:6px;">
+                                    Ringkasan Sistem: Task Overdue (${liveReport.overdueTasks.length}) | Closing Belum Selesai (${liveReport.unclosedPeriods.length}) | Permintaan Tambahan Waktu (${liveReport.extensionRequests.length}) | Job Order Terbuka (${liveReport.openJobOrders.length}) | Klarifikasi Aktif (${liveReport.activeClarifications.length})
+                                </div>
+                                <input type="text" id="trfSupNote_${trf.id}" placeholder="Catatan hasil pemeriksaan Supervisor (wajib diisi jika Ditolak)..." style="width:100%; padding:6px; border-radius:4px; border:1px solid var(--border-color); box-sizing:border-box; margin-bottom:8px; font-size:12px;">
+                                <div style="display:flex; gap:8px; justify-content:flex-end;">
+                                    <button onclick="decidePicTransferFlow('${trf.id}', false)" class="btn-danger" style="padding:6px 12px; font-size:12px;">❌ Ditolak (Masih Ada Masalah)</button>
+                                    <button onclick="decidePicTransferFlow('${trf.id}', true)" class="btn-success" style="padding:6px 14px; font-size:12px;">✅ Disetujui (Lengkap)</button>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        stageActionHtml = `<div style="margin-top:8px; font-size:12px; color:#b45309; font-weight:600;">⏳ Menunggu pemeriksaan & persetujuan Supervisor (Tahap 3).</div>`;
+                    }
+                } else if (trf.status === 'Disetujui') {
+                    stageActionHtml = `
+                        <div style="margin-top:10px; background:var(--bg-card); padding:10px; border-radius:6px; border:1px solid var(--success);">
+                            <div style="font-weight:700; font-size:12px; color:var(--success); margin-bottom:6px;">🤝 Tahap 4 - Acceptance PIC Baru (${trf.toPicName})</div>
+                            <div style="font-size:12px; margin-bottom:6px;">PIC Baru wajib melakukan review sebelum menerima serah terima:</div>
+                            <div style="display:flex; gap:14px; flex-wrap:wrap; margin-bottom:8px;">
+                                <label style="font-size:12px; cursor:${canReviewNewPic ? 'pointer' : 'default'};">
+                                    <input type="checkbox" ${rev.riwayat ? 'checked' : ''} ${canReviewNewPic ? '' : 'disabled'} onchange="toggleNewPicReviewCheck('${trf.id}', 'riwayat', this.checked)"> Review Riwayat Pekerjaan
+                                </label>
+                                <label style="font-size:12px; cursor:${canReviewNewPic ? 'pointer' : 'default'};">
+                                    <input type="checkbox" ${rev.outstanding ? 'checked' : ''} ${canReviewNewPic ? '' : 'disabled'} onchange="toggleNewPicReviewCheck('${trf.id}', 'outstanding', this.checked)"> Review Outstanding Task
+                                </label>
+                                <label style="font-size:12px; cursor:${canReviewNewPic ? 'pointer' : 'default'};">
+                                    <input type="checkbox" ${rev.deadline ? 'checked' : ''} ${canReviewNewPic ? '' : 'disabled'} onchange="toggleNewPicReviewCheck('${trf.id}', 'deadline', this.checked)"> Review Deadline Berjalan
+                                </label>
+                            </div>
+                            ${canReviewNewPic
+                                ? `<div style="text-align:right;"><button onclick="acceptPicTransferHandover('${trf.id}')" class="btn-success" style="padding:7px 14px; font-size:12px;">✅ Terima Serah Terima</button></div>`
+                                : `<small style="color:var(--text-muted);">Menunggu konfirmasi penerimaan oleh PIC Baru (${trf.toPicName}).</small>`
+                            }
+                        </div>
+                    `;
+                }
+
+                return `
+                    <div style="background:var(--bg-main); border:1px solid var(--border-color); border-left:5px solid var(--primary); border-radius:8px; padding:14px; margin-bottom:14px;">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px;">
+                            <div>
+                                <div style="font-size:15px; font-weight:700; color:var(--primary);">${trf.clientName}</div>
+                                <div style="font-size:12px; margin-top:2px;">
+                                    <strong>PIC Lama:</strong> ${trf.fromPicName} &rarr; <strong>PIC Baru:</strong> ${trf.toPicName} |
+                                    <strong>Tanggal Efektif:</strong> ${trf.effectiveDate} |
+                                    <strong>Alasan:</strong> ${trf.reason}
+                                </div>
+                                ${trf.supervisorNotes ? `<div style="font-size:12px; color:#b45309; margin-top:4px;"><strong>Catatan Supervisor:</strong> ${trf.supervisorNotes}</div>` : ''}
+                            </div>
+                            <div style="text-align:right;">
+                                <span class="idc-pill ${statusPillClass}">Status Transfer: ${trf.status}</span>
+                                <span class="idc-pill ${ckSummary.isComplete ? 'idc-pill-ok' : 'idc-pill-warn'}" style="margin-left:4px;">Serah Terima: ${ckSummary.label} (${ckSummary.checkedCount}/${ckSummary.total})</span>
+                            </div>
+                        </div>
+
+                        <!-- TAHAP 2: CHECKLIST SERAH TERIMA WAJIB -->
+                        <div style="margin-top:10px;">
+                            <div style="font-weight:700; font-size:12px; margin-bottom:6px;">📋 Tahap 2 - Checklist Serah Terima Wajib (Status: ${ckSummary.label})</div>
+                            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap:8px;">
+                                ${renderChecklistHtml(trf, canEditChecklist)}
+                            </div>
+                        </div>
+
+                        <!-- MODUL BARU: OUTSTANDING HANDOVER REPORT -->
+                        <details style="margin-top:10px;">
+                            <summary style="cursor:pointer; font-size:12px; font-weight:700; color:var(--primary);">📊 Lihat Outstanding Handover Report (Otomatis)</summary>
+                            ${renderHandoverReportHtml(liveReport)}
+                        </details>
+
+                        ${stageActionHtml}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Render Tabel Transfer History (Modul Baru)
+        if (acceptedList.length === 0) {
+            historyTbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Belum ada riwayat perpindahan PIC yang selesai (Accepted).</td></tr>`;
+        } else {
+            historyTbody.innerHTML = acceptedList.map(t => `
+                <tr>
+                    <td><strong>${t.clientName}</strong></td>
+                    <td>${t.fromPicName}</td>
+                    <td><strong>${t.toPicName}</strong></td>
+                    <td>${t.effectiveDate}</td>
+                    <td>${t.reason}</td>
+                </tr>
+            `).join('');
+        }
+
+        renderClientOwnershipHistory();
+    }
+    window.renderPicTransferTable = renderPicTransferTable;
+
+    // Render Client Ownership History (Modul Baru)
+    function renderClientOwnershipHistory() {
+        ensureClientOwnershipInitialized();
+        const grid = document.getElementById('extClientOwnershipGrid');
+        if (!grid) return;
+
+        const filterClientId = (document.getElementById('extOwnershipClientFilter') || {}).value || 'ALL';
+        let clientsToShow = appClients || [];
+        if (loggedInUser && loggedInUser.role === 'pic') {
+            clientsToShow = clientsToShow.filter(c => {
+                const hist = appClientOwnershipHistory[c.id] || [];
+                return c.pic === loggedInUser.id || hist.some(h => h.picId === loggedInUser.id);
+            });
+        }
+        if (filterClientId !== 'ALL') {
+            clientsToShow = clientsToShow.filter(c => c.id === filterClientId);
+        }
+
+        if (clientsToShow.length === 0) {
+            grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; color:var(--text-muted);">Tidak ada data riwayat kepemilikan klien.</div>`;
+            return;
+        }
+
+        grid.innerHTML = clientsToShow.map(c => {
+            const hist = appClientOwnershipHistory[c.id] || [];
+            const timelineHtml = hist.map((item, idx) => {
+                const isCurrent = !item.endDate;
+                const periodText = `${formatDateIndoShort(item.startDate)} - ${item.endDate ? formatDateIndoShort(item.endDate) : 'Sekarang'}`;
+                return `
+                    <div style="padding:6px 0; ${idx > 0 ? 'border-top:1px dashed var(--border-color);' : ''}">
+                        <div style="font-weight:700; font-size:13px; color:${isCurrent ? 'var(--success)' : 'var(--text-main)'};">
+                            ${item.picName} ${isCurrent ? '<span class="idc-pill idc-pill-ok">Aktif</span>' : ''}
+                        </div>
+                        <div style="font-size:12px; color:var(--text-muted);">${periodText}</div>
+                    </div>
+                `;
+            }).join('');
+
+            return `
+                <div class="idc-ext-stat" style="border-left-color:var(--secondary);">
+                    <div style="font-weight:700; font-size:14px; color:var(--primary); margin-bottom:6px;">🏢 ${c.name}</div>
+                    <div style="font-size:11px; font-weight:700; color:var(--text-muted); margin-bottom:4px;">Riwayat PIC:</div>
+                    ${timelineHtml}
+                </div>
+            `;
+        }).join('');
+    }
+    window.renderClientOwnershipHistory = renderClientOwnershipHistory;
+
+    // ---------------- 1. AUDIT TRAIL RENDER & EXPORT (FILTERED UNTUK PIC & DATA ENTRY) ----------------
+    function getFilteredAuditLogsForCurrentUser() {
+        let logs = appAuditLogs || [];
+        if (!loggedInUser) return [];
+
+        // Supervisor dapat melihat seluruh history audit trail
+        if (loggedInUser.role === 'supervisor') {
+            return logs;
+        }
+
+        // PIC dan Data Entry hanya menampilkan history klien yang mereka handle saja
+        const { clientIds, clientNames } = getHandledClientEntitiesForCurrentUser();
+        return logs.filter(l => {
+            if (l.clientId && clientIds.has(l.clientId)) return true;
+
+            const targetLower = String(l.target || '').toLowerCase();
+            const detailLower = String(l.detail || '').toLowerCase();
+
+            for (const cId of clientIds) {
+                const cIdLower = String(cId).toLowerCase();
+                if (targetLower === cIdLower || detailLower.includes(cIdLower)) return true;
+            }
+            for (const cName of clientNames) {
+                if (cName && (targetLower.includes(cName) || detailLower.includes(cName))) return true;
+            }
+            return false;
+        });
+    }
+
+    function renderAuditTrailDashboard() {
+        const tbody = document.querySelector('#extAuditTrailTable tbody');
+        const scopeHintEl = document.getElementById('extAuditScopeHint');
+        if (!tbody) return;
+
+        if (scopeHintEl && loggedInUser) {
+            if (loggedInUser.role === 'supervisor') {
+                scopeHintEl.textContent = 'Menampilkan seluruh riwayat aktivitas & perubahan seluruh klien (Otorisasi Supervisor).';
+            } else {
+                const { clientNames } = getHandledClientEntitiesForCurrentUser();
+                const countClient = clientNames.size;
+                scopeHintEl.textContent = `Menampilkan khusus riwayat aktivitas klien yang Anda handle (${countClient} klien).`;
+            }
+        }
+
+        const q = ((document.getElementById('extAuditSearchInput') || {}).value || '').trim().toLowerCase();
+        const cat = (document.getElementById('extAuditCategoryFilter') || {}).value || 'ALL';
+
+        let logs = getFilteredAuditLogsForCurrentUser();
+        if (cat !== 'ALL') logs = logs.filter(l => l.category === cat);
+        if (q) {
+            logs = logs.filter(l =>
+                String(l.actor).toLowerCase().includes(q) ||
+                String(l.action).toLowerCase().includes(q) ||
+                String(l.target).toLowerCase().includes(q) ||
+                String(l.detail).toLowerCase().includes(q)
+            );
+        }
+
+        if (logs.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Belum ada log audit trail untuk klien yang Anda handle.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = logs.slice(0, 100).map(l => `
+            <tr>
+                <td><small>${l.timestamp}</small></td>
+                <td>${l.actor}</td>
+                <td><span class="idc-pill idc-pill-info">${l.category}</span></td>
+                <td><strong>${l.action}</strong></td>
+                <td>${l.target}</td>
+                <td><small>${l.detail}</small></td>
+            </tr>
+        `).join('');
+    }
+    window.renderAuditTrailDashboard = renderAuditTrailDashboard;
+
+    function exportAuditTrailCsv() {
+        const headers = ['Waktu', 'Pelaku', 'Kategori', 'Aksi', 'Target', 'Detail'];
+        const scopedLogs = getFilteredAuditLogsForCurrentUser();
+        const rows = scopedLogs.map(l => [l.timestamp, l.actor, l.category, l.action, l.target, l.detail]);
+        const csv = [headers, ...rows]
+            .map(r => r.map(cell => `"${String(cell || '').replace(/"/g, '""')}"`).join(','))
+            .join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `audit_trail_${activePeriod || 'all'}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+    window.exportAuditTrailCsv = exportAuditTrailCsv;
+
+    // ---------------- HOOK NON-INTRUSIF KE FUNGSI ASLI ----------------
+    const origShowDashboardInterface = window.showDashboardInterface;
+    window.showDashboardInterface = function(user) {
+        ensureSidebarLayoutShell();
+        injectExtensionPanels();
+        if (typeof origShowDashboardInterface === 'function') {
+            origShowDashboardInterface(user);
+        }
+
+        buildSidebarNavigationMenu();
+
+        if (user && user.role === 'data_entry') {
+            const p1 = document.getElementById('extDeadlineMonitorPanel');
+            const p2 = document.getElementById('extClosingMonitorPanel');
+            const p3 = document.getElementById('extPicTransferPanel');
+            const p4 = document.getElementById('extAuditTrailPanel');
+            if (p1) p1.style.display = 'block';
+            if (p2) p2.style.display = 'none';
+            if (p3) p3.style.display = 'none';
+            if (p4) p4.style.display = 'block';
+            renderDeadlineMonitoringDashboard();
+            renderAuditTrailDashboard();
+            selectSidebarMenu(currentSidebarMenuId);
+            return;
+        }
+        const p1 = document.getElementById('extDeadlineMonitorPanel');
+        const p2 = document.getElementById('extClosingMonitorPanel');
+        const p3 = document.getElementById('extPicTransferPanel');
+        const p4 = document.getElementById('extAuditTrailPanel');
+        if (p1) p1.style.display = 'block';
+        if (p2) p2.style.display = 'block';
+        if (p3) p3.style.display = 'block';
+        if (p4) p4.style.display = 'block';
+
+        populatePicTransferSelectors();
+        renderDeadlineMonitoringDashboard();
+        renderClosingMonitoringDashboard();
+        renderPicTransferTable();
+        renderAuditTrailDashboard();
+        selectSidebarMenu(currentSidebarMenuId);
+    };
+
+    const origToggleTaskDone = window.toggleTaskDone;
+    window.toggleTaskDone = function(wsId, taskIdx, isDone) {
+        const ws = (appWorksheets || []).find(w => w.id === wsId);
+        const task = ws && ws.tasks ? ws.tasks[taskIdx] : null;
+        if (typeof origToggleTaskDone === 'function') origToggleTaskDone(wsId, taskIdx, isDone);
+        recordAuditTrail('WORKSHEET', isDone ? 'TASK_DONE' : 'TASK_UNDONE', ws ? ws.clientName : wsId, task ? `${task.name} (${wsId})` : wsId, ws ? ws.clientId : '');
+        renderDeadlineMonitoringDashboard();
+        renderClosingMonitoringDashboard();
+    };
+
+    const origCloseClientWorkspace = window.closeClientWorkspace;
+    window.closeClientWorkspace = function(wsId) {
+        const beforeClosed = ((appWorksheets || []).find(w => w.id === wsId) || {}).isClosed;
+        if (typeof origCloseClientWorkspace === 'function') origCloseClientWorkspace(wsId);
+        const afterWs = (appWorksheets || []).find(w => w.id === wsId);
+        if (!beforeClosed && afterWs && afterWs.isClosed) {
+            recordAuditTrail('CLOSING', 'SUBMIT_CLOSING', afterWs.clientName, `Periode ${afterWs.period} diajukan closing`, afterWs.clientId);
+        }
+        renderClosingMonitoringDashboard();
+    };
+
+    const origSubmitSupervisorReview = window.submitSupervisorReview;
+    window.submitSupervisorReview = function(wsId, status) {
+        const notesEl = document.getElementById(`revNotes_${wsId}`);
+        const notes = notesEl ? notesEl.value : '';
+        if (typeof origSubmitSupervisorReview === 'function') origSubmitSupervisorReview(wsId, status);
+        const ws = (appWorksheets || []).find(w => w.id === wsId);
+        recordAuditTrail('CLOSING', status === 'approved' ? 'APPROVE_CLOSING' : 'REVISION_CLOSING', ws ? ws.clientName : wsId, notes || status, ws ? ws.clientId : '');
+        renderClosingMonitoringDashboard();
+    };
+
+    const origReopenClientWorkspace = window.reopenClientWorkspace;
+    window.reopenClientWorkspace = function(wsId) {
+        if (typeof origReopenClientWorkspace === 'function') origReopenClientWorkspace(wsId);
+        const ws = (appWorksheets || []).find(w => w.id === wsId);
+        recordAuditTrail('CLOSING', 'REOPEN_WORKSPACE', ws ? ws.clientName : wsId, 'Gembok worksheet dibuka kembali', ws ? ws.clientId : '');
+        renderClosingMonitoringDashboard();
+    };
+
+    const origUpdateClientPicDirectly = window.updateClientPicDirectly;
+    window.updateClientPicDirectly = function(clientId, newPicId) {
+        const client = (appClients || []).find(c => c.id === clientId);
+        const oldPicName = client ? (((appUsers || []).find(u => u.id === client.pic) || {}).name || client.pic) : '-';
+        const newPicName = ((appUsers || []).find(u => u.id === newPicId) || {}).name || newPicId;
+        if (typeof origUpdateClientPicDirectly === 'function') origUpdateClientPicDirectly(clientId, newPicId);
+        recordAuditTrail('PIC_TRANSFER', 'DIRECT_PIC_CHANGE', client ? client.name : clientId, `${oldPicName} -> ${newPicName}`, clientId);
+        populatePicTransferSelectors();
+        renderPicTransferTable();
+    };
+
+    const origCreateNewJobOrder = window.createNewJobOrder;
+    window.createNewJobOrder = function() {
+        const beforeLen = (appJobOrders || []).length;
+        if (typeof origCreateNewJobOrder === 'function') origCreateNewJobOrder();
+        if ((appJobOrders || []).length > beforeLen) {
+            const latest = appJobOrders[appJobOrders.length - 1];
+            recordAuditTrail('JOB_ORDER', 'CREATE_JOB_ORDER', latest.clientName, `Untuk ${latest.deName}: ${latest.description} (DL: ${latest.deadline})`, latest.clientId);
+            renderDeadlineMonitoringDashboard();
+        }
+    };
+
+    const origSubmitReportLink = window.submitReportLink;
+    window.submitReportLink = function(joId) {
+        const jo = (appJobOrders || []).find(j => j.id === joId);
+        if (typeof origSubmitReportLink === 'function') origSubmitReportLink(joId);
+        if (jo) {
+            recordAuditTrail('JOB_ORDER', 'SUBMIT_REPORT_LINK', jo.clientName, `Lampiran laporan disimpan: ${jo.reportLink || '-'}`, jo.clientId);
+        }
+    };
+
+    const origMarkJobAsComplete = window.markJobAsComplete;
+    window.markJobAsComplete = function(joId) {
+        const jo = (appJobOrders || []).find(j => j.id === joId);
+        const beforeStatus = jo ? jo.status : '';
+        if (typeof origMarkJobAsComplete === 'function') origMarkJobAsComplete(joId);
+        if (jo && beforeStatus !== 'completed' && jo.status === 'completed') {
+            recordAuditTrail('JOB_ORDER', 'COMPLETE_JOB_ORDER', jo.clientName, `Tugas diselesaikan Data Entry: ${jo.description}`, jo.clientId);
+            renderDeadlineMonitoringDashboard();
+        }
+    };
+
+    const origRequestExtension = window.requestExtension;
+    window.requestExtension = function(joId) {
+        const jo = (appJobOrders || []).find(j => j.id === joId);
+        if (typeof origRequestExtension === 'function') origRequestExtension(joId);
+        if (jo && jo.extensionRequested) {
+            recordAuditTrail('JOB_ORDER', 'REQUEST_EXTENSION', jo.clientName, `Ajukan +${jo.extensionRequestedDays} hari (${jo.extensionReason})`, jo.clientId);
+        }
+    };
+
+    const origEvaluateJobOrder = window.evaluateJobOrder;
+    window.evaluateJobOrder = function(joId, action) {
+        const jo = (appJobOrders || []).find(j => j.id === joId);
+        if (typeof origEvaluateJobOrder === 'function') origEvaluateJobOrder(joId, action);
+        if (jo) {
+            recordAuditTrail('JOB_ORDER', action === 'approve' ? 'APPROVE_JOB_ORDER' : 'REVISION_JOB_ORDER', jo.clientName, `${jo.description} -> ${jo.status.toUpperCase()}`, jo.clientId);
+            renderDeadlineMonitoringDashboard();
+        }
+    };
+
+    const origRegisterNewClient = window.registerNewClient;
+    window.registerNewClient = function() {
+        const beforeLen = (appClients || []).length;
+        if (typeof origRegisterNewClient === 'function') origRegisterNewClient();
+        if ((appClients || []).length > beforeLen) {
+            const latest = appClients[appClients.length - 1];
+            ensureClientOwnershipInitialized();
+            recordAuditTrail('MASTER', 'REGISTER_CLIENT', latest.name, `Jenis: ${latest.type}, PIC: ${latest.pic}`, latest.id);
+            populatePicTransferSelectors();
+            renderClosingMonitoringDashboard();
+        }
+    };
+})();
 </script>
 </body>
 </html>
